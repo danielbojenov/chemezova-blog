@@ -18,6 +18,7 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Image variant enum | `app/Enums/ImageVariant.php` |
 | Reusable slug field | `app/Filament/Support/SlugInput.php` |
 | Reusable image block | `app/Filament/Support/ImageBlock.php` |
+| Reusable FAQ block | `app/Filament/Support/FaqBlock.php` |
 | Image pipeline orchestrator | `app/Support/Images/ArticleImageProcessor.php` |
 | WebP conversion | `app/Support/Images/ImageConverter.php` |
 | Configurable image sizes | `app/Support/Images/ImageSizeSettings.php` |
@@ -98,13 +99,14 @@ Builder::make('content')
                 RichEditor::make('content')->hiddenLabel()->required(),
             ]),
         ImageBlock::make(),
+        FaqBlock::make(),
     ])
     ->reorderableWithButtons()
     ->collapsible()
     ->addActionLabel('Add block'),
 ```
 
-A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
+A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`, `faq`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
 
 ### Section "Taxonomy" (2 columns)
 
@@ -205,6 +207,47 @@ private static function storageFileName(TemporaryUploadedFile $file): string
 ```
 
 All uploads initially land in `articles/tmp/` rather than the final `articles/{id}/` directory — a new article doesn't have an ID yet at form-fill time, and existing articles shouldn't get half-processed images before the record actually saves. The stored filename is the slugified original name plus a random `-tmp{6 chars}` suffix, with the extension always derived server-side from `$file->extension()` (never trusted from the client).
+
+### `FaqBlock::make()`
+
+```php
+public static function make(): Block
+{
+    return Block::make('faq')
+        ->label('FAQ')->icon(Heroicon::QuestionMarkCircle)
+        ->schema([
+            TextInput::make('heading')->maxLength(255),
+            Repeater::make('items')
+                ->hiddenLabel()
+                ->schema([
+                    TextInput::make('question')->required()->maxLength(500)->live(onBlur: true),
+                    RichEditor::make('answer')->required(),
+                ])
+                ->required()->minItems(1)
+                ->collapsible()
+                ->itemLabel(fn (array $state): ?string => $state['question'] ?? null)
+                ->reorderableWithButtons()
+                ->addActionLabel('Add question'),
+        ]);
+}
+```
+
+A FAQ content block: an optional `heading` plus a `Repeater` of question/answer pairs (answers are rich text HTML), intended to render as an accordion on the frontend. `question` is `->live(onBlur: true)` so `itemLabel()` shows the question text on collapsed repeater items. The image pipeline ignores this block entirely (it only processes `type === 'image'`).
+
+Stored block shape:
+
+```php
+[
+    'type' => 'faq',
+    'data' => [
+        'heading' => ?string,
+        'items' => [
+            ['question' => string, 'answer' => string /* HTML */],
+            // ...
+        ],
+    ],
+]
+```
 
 ## Business logic on the Resource
 

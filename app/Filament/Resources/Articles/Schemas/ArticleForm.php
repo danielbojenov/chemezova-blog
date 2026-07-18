@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Articles\Schemas;
 
 use App\Enums\ArticleStatus;
+use App\Filament\Support\FaqBlock;
 use App\Filament\Support\ImageBlock;
 use App\Filament\Support\SlugInput;
 use Filament\Forms\Components\Builder;
@@ -56,6 +57,7 @@ class ArticleForm
                                             ->required(),
                                     ]),
                                 ImageBlock::make(),
+                                FaqBlock::make(),
                             ])
                             ->reorderableWithButtons()
                             ->collapsible()

@@ -62,6 +62,32 @@ test('rich text blocks are preserved when image blocks are processed', function 
         ->and($article->content[1]['data']['alt'])->toBe('Alt text');
 });
 
+test('faq blocks are preserved when image blocks are processed', function () {
+    $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
+
+    $faqBlock = [
+        'type' => 'faq',
+        'data' => [
+            'heading' => 'FAQ',
+            'items' => [['question' => 'What?', 'answer' => '<p>This.</p>']],
+        ],
+    ];
+
+    $article = Article::factory()->create([
+        'content' => [
+            $faqBlock,
+            imageBlock('articles/tmp/photo-tmpabc123.jpg'),
+        ],
+    ]);
+
+    $this->processor->process($article);
+
+    $article->refresh();
+
+    expect($article->content[0])->toBe($faqBlock)
+        ->and($article->content[1]['data']['image'])->toBe("articles/{$article->id}/photo.webp");
+});
+
 test('processing is idempotent for already converted blocks', function () {
     $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
 

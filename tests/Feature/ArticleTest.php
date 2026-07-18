@@ -17,6 +17,27 @@ test('factory creates a valid draft article', function () {
         ->and($article->content[0]['data']['content'])->toBeString();
 });
 
+test('faq block content round-trips through the array cast', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'faq', 'data' => [
+                'heading' => 'Frequently asked questions',
+                'items' => [
+                    ['question' => 'What is this?', 'answer' => '<p>An article.</p>'],
+                    ['question' => 'Why?', 'answer' => '<p>Because.</p>'],
+                ],
+            ]],
+        ],
+    ]);
+
+    $content = $article->refresh()->content;
+
+    expect($content[0]['type'])->toBe('faq')
+        ->and($content[0]['data']['heading'])->toBe('Frequently asked questions')
+        ->and($content[0]['data']['items'])->toHaveCount(2)
+        ->and($content[0]['data']['items'][0])->toBe(['question' => 'What is this?', 'answer' => '<p>An article.</p>']);
+});
+
 test('published state sets a past published_at', function () {
     $article = Article::factory()->published()->create();
 
