@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Articles\Schemas;
 
 use App\Filament\Support\ArticleContentEntry;
+use App\Filament\Support\ArticleTldrEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -41,6 +42,13 @@ class ArticleInfolist
                             ->label('Tags')
                             ->badge()
                             ->placeholder('—'),
+                    ]),
+                Section::make('TLDR')
+                    ->columnSpanFull()
+                    ->schema([
+                        ArticleTldrEntry::make('tldr')
+                            ->hiddenLabel()
+                            ->columnSpanFull(),
                     ]),
                 Section::make('Content')
                     ->columnSpanFull()

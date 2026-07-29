@@ -3,13 +3,16 @@
 namespace App\Filament\Resources\Articles\Schemas;
 
 use App\Enums\ArticleStatus;
+use App\Enums\RankingOrder;
 use App\Filament\Support\ArticleRichEditor;
 use App\Filament\Support\FaqBlock;
 use App\Filament\Support\ImageBlock;
+use App\Filament\Support\ProductCardBlock;
 use App\Filament\Support\SlugInput;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -42,9 +45,23 @@ class ArticleForm
                             ->required(fn (Get $get): bool => self::status($get) === ArticleStatus::Scheduled)
                             ->helperText('Leave empty when publishing to use the current time.'),
                     ]),
+                Section::make('TLDR')
+                    ->columnSpanFull()
+                    ->schema([
+                        RichEditor::make('tldr')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->helperText('Optional short summary shown above the article.'),
+                    ]),
                 Section::make('Content')
                     ->columnSpanFull()
                     ->schema([
+                        Select::make('ranking_order')
+                            ->label('Product card numbering')
+                            ->options(RankingOrder::class)
+                            ->default(RankingOrder::Descending)
+                            ->required()
+                            ->helperText('Numbers the product cards below. Descending suits a TOP 10 countdown; ranks always follow card order, so removing a card leaves no gap.'),
                         Builder::make('content')
                             // ->hiddenLabel()
                             ->blocks([
@@ -58,6 +75,7 @@ class ArticleForm
                                     ]),
                                 ImageBlock::make(),
                                 FaqBlock::make(),
+                                ProductCardBlock::make(),
                             ])
                             ->reorderableWithButtons()
                             ->collapsible()

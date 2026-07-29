@@ -137,11 +137,18 @@ Gotcha worth knowing: tiptap-php's `descendants()` walker **skips text nodes**, 
 
 `ArticleAffiliateLinkSyncer::sync(Article $article)` runs from `CreateArticle::afterCreate()` and `EditArticle::afterSave()` (after the image processor, so it reads final content):
 
-- Collects every rich text HTML string from the content blocks — `richText` → `data.content`, `faq` → each `data.items[].answer`.
+- Collects every rich text HTML string from the content blocks — `richText` → `data.content`, `faq` → each `data.items[].answer`, and `productCard` → `data.description` **only when the card overrides the catalog description**.
 - Extracts slugs with `~href="(?:https?://[^"/]+)?/go/([^"/?#]+)~` (matches both relative `/go/slug` as inserted by the editor and absolute forms).
-- Resolves slugs to ids and `sync()`s the `affiliate_link_article` pivot. Unknown slugs are silently ignored; links removed from content are detached.
+- **Additionally collects link ids from product cards**, which reference links by id rather than by href — see below.
+- Resolves everything to ids and `sync()`s the `affiliate_link_article` pivot. Unknown slugs and ids missing from the registry are silently ignored; links removed from content are detached.
 
 Lightweight regex over the stored HTML (rather than a TipTap document walk) matches the precedent set by `ArticleImageProcessor`'s array scanning, and is safe here because content is trusted admin-authored HTML serialized by TipTap with double-quoted attributes.
+
+**Product cards are the exception to the href scan.** A `productCard` block stores affiliate link *ids*, not hrefs, so a regex over rich text alone would miss every retailer link rendered on a card — placements would be under-reported and the "used in articles" panel would be wrong. The syncer therefore also reads each card's `links_mode` ([`ProductCardOverride`](ProductResource.md#per-card-overrides)) and contributes the card's override ids when it is `custom`, the product's own `affiliateLinks` when `inherit`, and nothing when `none`.
+
+A card's description is scanned for hrefs, but **only when it overrides the catalog**. An inherited description belongs to the product, so links inside it are the product's own — scanning it would attribute the same link to every article featuring that product.
+
+Products also carry links directly, via the `affiliate_link_product` pivot and the `AffiliateLink::products()` relation. Those are the defaults a card inherits; see [ProductResource.md](ProductResource.md#retailer-links-the-two-link-cap).
 
 **Slug-edit caveat:** renaming a slug does not rewrite hrefs already stored in article content — those `/go/old-slug` links will 404 until the article is re-saved with updated links. The pivot itself is id-keyed, so placement tracking survives a rename. The form's slug helper text warns about this; blocking slug edits once placements exist is a possible follow-up.
 

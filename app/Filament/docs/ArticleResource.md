@@ -15,7 +15,10 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | View page | `app/Filament/Resources/Articles/Pages/ViewArticle.php` |
 | Edit page | `app/Filament/Resources/Articles/Pages/EditArticle.php` |
 | Reusable content entry (view) | `app/Filament/Support/ArticleContentEntry.php` |
+| Reusable TLDR entry (view) | `app/Filament/Support/ArticleTldrEntry.php` |
 | Content preview Blade view | `resources/views/filament/infolists/article-content.blade.php` |
+| TLDR preview Blade view | `resources/views/filament/infolists/article-tldr.blade.php` |
+| Shared preview stylesheet | `resources/views/filament/infolists/article-content-styles.blade.php` |
 | Model | `app/Models/Article.php` |
 | Related models | `app/Models/Category.php`, `app/Models/Tag.php` |
 | Status enum | `app/Enums/ArticleStatus.php` |
@@ -23,6 +26,8 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Reusable slug field | `app/Filament/Support/SlugInput.php` |
 | Reusable image block | `app/Filament/Support/ImageBlock.php` |
 | Reusable FAQ block | `app/Filament/Support/FaqBlock.php` |
+| Reusable product card block | `app/Filament/Support/ProductCardBlock.php` |
+| Product ranking syncer | `app/Support/Products/ArticleProductSyncer.php` |
 | Shared article rich editor | `app/Filament/Support/ArticleRichEditor.php` |
 | Affiliate link editor plugin | `app/Filament/Support/AffiliateLinkPlugin.php`, `app/Filament/Support/AffiliateLinkAction.php` |
 | Rich content display renderer | `app/Filament/Support/ArticleRichContent.php` |
@@ -30,7 +35,9 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Image pipeline orchestrator | `app/Support/Images/ArticleImageProcessor.php` |
 | WebP conversion | `app/Support/Images/ImageConverter.php` |
 | Configurable image sizes | `app/Support/Images/ImageSizeSettings.php` |
-| Schema migration | `database/migrations/2026_07_17_153849_create_articles_table.php` |
+| Ranking direction enum | `app/Enums/RankingOrder.php` |
+| Card override mode enum | `app/Enums/ProductCardOverride.php` |
+| Schema migrations | `database/migrations/2026_07_17_153849_create_articles_table.php`, `database/migrations/2026_07_29_133726_add_tldr_to_articles_table.php`, `database/migrations/2026_07_29_145358_add_ranking_order_to_articles_table.php`, `database/migrations/2026_07_29_145356_create_article_product_table.php` |
 
 There are **no RelationManagers**. The `categories`/`tags` many-to-many relations are managed inline on the article form via relationship `Select` fields with `createOptionForm()`, rather than dedicated RelationManager pages.
 
@@ -40,7 +47,9 @@ There are **no RelationManagers**. The `categories`/`tags` many-to-many relation
 class ArticleResource extends Resource
 {
     protected static ?string $model = Article::class;
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
+    protected static string|UnitEnum|null $navigationGroup = 'Content';
+    protected static ?int $navigationSort = 1;
 
     public static function form(Schema $schema): Schema { return ArticleForm::configure($schema); }
     public static function table(Table $table): Table   { return ArticlesTable::configure($table); }
@@ -63,7 +72,7 @@ Four routes. The `view` route is a read-only, reader-facing preview of the artic
 
 ## Form schema (`ArticleForm`)
 
-Four `Section`s, each `->columnSpanFull()`.
+Five `Section`s, each `->columnSpanFull()`.
 
 ### Section "Article" (2 columns)
 
@@ -96,9 +105,31 @@ This exists because Filament form state for a `status` field can hold either the
 
 `published_at` is visible for Published/Scheduled, and only *required* for Scheduled — a Published article can be saved with the field empty because the save-time hook defaults it to `now()`.
 
+### Section "TLDR"
+
+```php
+RichEditor::make('tldr')
+    ->hiddenLabel()
+    ->columnSpanFull()
+    ->helperText('Optional short summary shown above the article.'),
+```
+
+An optional one-paragraph summary of the article, stored in its own nullable `tldr` column. Two deliberate choices:
+
+- **It is a separate column, not a `content` block type.** The TLDR is structurally distinct from the body — there is exactly zero or one per article and it always renders first — so modelling it as a block (which editors could add multiple times, or reorder into the middle of the body) would be wrong. It also lets the public site query the summary without parsing the block JSON.
+- **It uses a plain `RichEditor`, not `ArticleRichEditor`.** The shared factory exists to attach the affiliate link plugin; affiliate placements are a body-only feature, so the TLDR gets the stock toolbar with no "Insert affiliate link" button. Consequently `ArticleAffiliateLinkSyncer` still scans **`content` only** — a `/go/` href hand-pasted into the TLDR will *not* be attached to the article in the `affiliate_link_article` pivot and will not appear in placement tracking. (It is still rendered with `rel="sponsored nofollow"`, because the view goes through `ArticleRichContent::renderer()` like every other rich text surface.)
+
+`RichEditor` stores raw HTML by default, so `tldr` is a plain nullable `text` column with **no cast** on the model.
+
 ### Section "Content"
 
 ```php
+Select::make('ranking_order')
+    ->label('Product card numbering')
+    ->options(RankingOrder::class)
+    ->default(RankingOrder::Descending)
+    ->required(),
+
 Builder::make('content')
     ->blocks([
         Block::make('richText')
@@ -109,15 +140,27 @@ Builder::make('content')
             ]),
         ImageBlock::make(),
         FaqBlock::make(),
+        ProductCardBlock::make(),
     ])
     ->reorderableWithButtons()
     ->collapsible()
     ->addActionLabel('Add block'),
 ```
 
-A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`, `faq`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
+A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`, `faq`, `productCard`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
 
 All rich text HTML in articles (the `richText` block and the FAQ answers) is edited through `ArticleRichEditor::make()`, a shared factory that returns a `RichEditor` with the affiliate link plugin attached and its "Insert affiliate link" toolbar button enabled — see [AffiliateLinkResource.md](AffiliateLinkResource.md#insertion-ux-the-rich-editor-plugin) for the plugin's mechanics.
+
+`ranking_order` sits in this section rather than with the article metadata because it numbers the product cards in the builder directly below it. See [Product card blocks](#product-card-blocks).
+
+### Product card blocks
+
+`ProductCardBlock::make()` embeds a catalog `Product` into the article — the mechanism behind "TOP 10" rankings, where cards are interleaved with prose. The block is fully documented in [ProductResource.md](ProductResource.md#product-cards-in-articles); what matters from the article side:
+
+- **The block stores no rank.** A card's number is derived from its position among the article's `productCard` blocks, with `articles.ranking_order` (`RankingOrder::Ascending`/`Descending`, default descending for a countdown) setting the direction. Deleting or reordering a card therefore cannot leave a gap or a duplicate — there is no stored number to go stale.
+- `ArticleProductSyncer::ranksFor()` is the single source of truth for that calculation. Both the syncer and the content Blade view call it, so the number printed on a card and the rank stored on the `article_product` pivot cannot disagree.
+- Card display data (image, price, rating, brand, ingredients, form, composition) is pulled **live** from the product on render. The only per-article state stored in the block is the product reference plus two override choices — retailer links and description — both using `ProductCardOverride`. Editorial commentary goes in ordinary rich text blocks around the card rather than inside it.
+- The block header reads `Product card — {name}`, so the article's structure stays readable when every block is collapsed, and the block body shows a thumbnail preview of the selected product for visual reordering. The preview's product name links to that product's edit page in a **new tab**, so correcting a catalog detail never discards the article's unsaved Builder state.
 
 ### Section "Taxonomy" (2 columns)
 
@@ -151,9 +194,29 @@ Note: `excerpt` is a fillable, DB-backed column (see [Model](#model-article)) bu
 
 ## Infolist / View schema (`ArticleInfolist`)
 
-The `view` page (`ViewArticle` extends `ViewRecord`) renders a read-only, reader-facing preview of the article instead of the form. `ViewArticle` delegates to `ArticleInfolist::configure()` from its `infolist()` method — the same thin-coordinator split used for the form. `ViewRecord` auto-provides an Edit action in the page header, so no header config is needed.
+The `view` page (`ViewArticle` extends `ViewRecord`) renders a read-only, reader-facing preview of the article instead of the form. `ViewArticle` delegates to `ArticleInfolist::configure()` from its `infolist()` method — the same thin-coordinator split used for the form. It also declares `getHeaderActions(): [EditAction::make()]` explicitly.
 
-Four `Section`s parallel the form: **Article** (title as a large bold `TextEntry`, `status` badge via the enum, `published_at` dateTime), **Taxonomy** (`categories.name`/`tags.name` badges), **Content** (the block preview, below), and **SEO** (collapsed `meta_title`/`meta_description`). Entries use a `->placeholder('—')` for empty values.
+Five `Section`s parallel the form: **Article** (title as a large bold `TextEntry`, `status` badge via the enum, `published_at` dateTime), **Taxonomy** (`categories.name`/`tags.name` badges), **TLDR** (the summary, below), **Content** (the block preview, below), and **SEO** (collapsed `meta_title`/`meta_description`). Entries use a `->placeholder('—')` for empty values.
+
+Note that the infolist order differs from the form: **Taxonomy sits before TLDR/Content here**, so the reading preview keeps the two long-form blocks adjacent at the bottom of the page.
+
+### Rendering the `tldr` summary
+
+```php
+// app/Filament/Support/ArticleTldrEntry.php
+class ArticleTldrEntry extends Entry
+{
+    protected string $view = 'filament.infolists.article-tldr';
+}
+```
+
+The TLDR is rendered by a custom entry rather than `TextEntry::make('tldr')->html()` for two reasons: it needs the same `.acp-richtext` preview typography as the content blocks (see [Styling](#rendering-the-content-builder-blocks) below), and the block must stay visible when the field is empty. The Blade view renders `ArticleRichContent::renderer($getState())` when the value is `filled()`, and otherwise falls back to:
+
+```blade
+<p class="acp-empty">No TLDR has been written for this article.</p>
+```
+
+A `->placeholder()` would not do — Filament placeholders replace the entry's value, but the surrounding markup and empty-state copy here are deliberate: the section always renders so an editor can see at a glance that a summary is still missing.
 
 ### Rendering the `content` Builder blocks
 
@@ -172,10 +235,15 @@ The Blade view iterates `$getState()` and renders each block type as it will app
 - `richText` and `faq` answers — rendered through `ArticleRichContent::renderer($html)`, a thin wrapper around `Filament\Forms\Components\RichEditor\RichContentRenderer` that outputs (and sanitizes) the stored RichEditor HTML and centrally injects `rel="sponsored nofollow"` on every affiliate `/go/` link (the `rel` attribute is never stored in content — see [AffiliateLinkResource.md](AffiliateLinkResource.md#central-relsponsored-nofollow-at-render-time)).
 - `image` — a `<figure>` whose `src` is the **`-mobile` variant** derived from the stored Original path (`Str::replaceLast('.webp', ImageVariant::Mobile->fileSuffix().'.webp', $path)`), served via `Storage::disk('public')->url()`, plus alt text and an optional `<figcaption>`.
 - `faq` — a standout heading followed by a `<details>`/`<summary>` accordion per question/answer pair.
+- `productCard` — a rank badge, the product's `-mobile` image, name, brand, a facts list (rating, pack price, per-dose price, doses, form, composition, primary ingredient), ingredient pills, the description, and buy buttons pointing at `/go/{slug}`. Ranks come from `ArticleProductSyncer::ranksFor()`, the same helper the syncer uses. Products are loaded once up front with `Product::with(['brand', 'affiliateLinks'])->findMany(...)` so a ten-card ranking does not N+1, and a card whose product has been deleted is skipped entirely rather than half-rendered.
 
 Every array access is null-guarded (`?? ''`) because `content` is user-authored JSON; an empty `content` shows a fallback message. The custom entry lives in `app/Filament/Support/` alongside the form-side reusable components (`SlugInput`, `ImageBlock`, `FaqBlock`).
 
-**Styling.** The admin panel does **not** ship the Tailwind Typography plugin, so `prose` classes are no-ops and Preflight would otherwise leave rich-text HTML unstyled (flattened headings/lists). The Blade view therefore carries its own self-contained, `@once` scoped `<style>` block (keyed off `.article-content-preview`, with `.dark` overrides) that restores rich-text typography, adds inter-block padding + a 1px separator, and styles the FAQ accordion. This keeps the feature dependency-free — no new npm package, no Filament custom-theme build step.
+**Styling.** The admin panel does **not** ship the Tailwind Typography plugin, so `prose` classes are no-ops and Preflight would otherwise leave rich-text HTML unstyled (flattened headings/lists). A self-contained `<style>` block (keyed off `.article-content-preview`, with `.dark` overrides) restores rich-text typography, adds inter-block padding + a 1px separator, and styles the FAQ accordion. This keeps the feature dependency-free — no new npm package, no Filament custom-theme build step.
+
+That stylesheet lives in its own partial, `resources/views/filament/infolists/article-content-styles.blade.php`, which both the content and TLDR views `@include`. The partial wraps everything in a once-directive, so it emits a single copy per page no matter how many previews render — and neither view depends on the other having rendered first.
+
+> Careful with Blade in that file: writing a directive name such as `@`once inside a CSS comment makes Blade compile it as a real directive and the view dies with a `ParseError`. Escape it or reword.
 
 ## Table (`ArticlesTable`)
 
@@ -323,6 +391,7 @@ protected function afterCreate(): void
     if ($record instanceof Article) {
         app(ArticleImageProcessor::class)->process($record);
         app(ArticleAffiliateLinkSyncer::class)->sync($record);
+        app(ArticleProductSyncer::class)->sync($record);
     }
 }
 ```
@@ -349,6 +418,7 @@ protected function afterSave(): void
     if ($record instanceof Article) {
         $this->hasProcessedImages = app(ArticleImageProcessor::class)->process($record);
         app(ArticleAffiliateLinkSyncer::class)->sync($record);
+        app(ArticleProductSyncer::class)->sync($record);
     }
 }
 
@@ -362,7 +432,11 @@ protected function getRedirectUrl(): ?string
 }
 ```
 
-Both hooks run the affiliate placement syncer after the image processor, so it scans the final (path-rewritten) content — it extracts every `/go/{slug}` href from rich text blocks and FAQ answers and syncs the `affiliate_link_article` pivot (see [AffiliateLinkResource.md](AffiliateLinkResource.md#placement-tracking)).
+Both hooks run the two syncers after the image processor, so they scan the final (path-rewritten) content.
+
+`ArticleAffiliateLinkSyncer` extracts every `/go/{slug}` href from rich text blocks and FAQ answers, and syncs the `affiliate_link_article` pivot (see [AffiliateLinkResource.md](AffiliateLinkResource.md#placement-tracking)). It **also** collects the link ids carried by product cards — those are stored as ids rather than hrefs, so an href-only scan would silently miss every retailer link on every card and under-report placements. Per card it contributes the override ids when `links_mode` is `custom`, the product's own links when `inherit`, and nothing when `none`.
+
+`ArticleProductSyncer` then syncs `article_product`, assigning each card the rank implied by its position and the article's `ranking_order`.
 
 `getRedirectUrl()` is overridden to force a full page remount after image processing. `ArticleImageProcessor` rewrites `content`'s image paths from `articles/tmp/...` to `articles/{id}/...` *after* the form has already submitted; Livewire's normal in-place state refill doesn't pick up that rewritten path for the FilePond preview, so the edit page redirects to itself to force a clean reload with the new path.
 
@@ -425,7 +499,7 @@ The article image workflow is a two-phase, deferred process: the `FileUpload` co
 ## Model (`Article`)
 
 ```php
-#[Fillable(['title', 'slug', 'excerpt', 'content', 'status', 'published_at', 'meta_title', 'meta_description'])]
+#[Fillable(['title', 'slug', 'excerpt', 'tldr', 'content', 'status', 'published_at', 'ranking_order', 'meta_title', 'meta_description'])]
 class Article extends Model
 {
     use HasFactory;
@@ -436,16 +510,18 @@ class Article extends Model
             'content' => 'array',
             'status' => ArticleStatus::class,
             'published_at' => 'datetime',
+            'ranking_order' => RankingOrder::class,
         ];
     }
 
     public function categories(): BelongsToMany     { return $this->belongsToMany(Category::class); }
     public function tags(): BelongsToMany           { return $this->belongsToMany(Tag::class); }
     public function affiliateLinks(): BelongsToMany { return $this->belongsToMany(AffiliateLink::class); }
+    public function products(): BelongsToMany       { return $this->belongsToMany(Product::class)->withPivot('rank'); }
 }
 ```
 
-Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`). `affiliateLinks` (pivot `affiliate_link_article`) is not edited directly — it's derived from content by the placement syncer on every save.
+Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `tldr` is deliberately **uncast** — it holds the RichEditor's raw HTML string. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`). `affiliateLinks` (pivot `affiliate_link_article`) and `products` (pivot `article_product`) are not edited directly — both are derived from content by their syncers on every save.
 
 ## Enums
 
@@ -459,6 +535,24 @@ Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $
 
 **`ImageVariant`** (`original` / `desktop` / `mobile` / `thumbnail`) exposes `fileSuffix()`, used throughout the image pipeline for consistent variant filenames.
 
+**`RankingOrder`** (`ascending` / `descending`) implements `HasLabel` and carries the ranking rule itself:
+
+```php
+public function rankFor(int $index, int $total): int
+{
+    return match ($this) {
+        self::Ascending => $index + 1,
+        self::Descending => $total - $index,
+    };
+}
+```
+
+Putting the calculation on the enum rather than in the syncer is what lets the Blade view compute the displayed number the same way the pivot was written.
+
+**`ProductCardOverride`** (`inherit` / `custom` / `none`) governs how a product card field resolves against the catalog. One enum serves both `links_mode` and `description_mode`, which is why its labels read generically ("Take from the catalog", "Override for this article", "Hide on this card") and let the field label supply the context.
+
+Because it is stored inside content JSON rather than a column it is read back as a plain string, so `ProductCardOverride::resolve()` normalises the enum, its backing value, or a missing key down to a single case. That normalisation is also wired into both selects via `->formatStateUsing()`, so a card saved before a mode field existed does not fail its `required()` rule on the next save — Filament does not back-fill `default()` for keys absent from stored block data.
+
 ## Database schema
 
 `articles` table:
@@ -468,15 +562,19 @@ $table->id();
 $table->string('title');
 $table->string('slug')->unique();
 $table->text('excerpt')->nullable();      // fillable, not on the form
+$table->text('tldr')->nullable();         // added by add_tldr_to_articles_table; RichEditor HTML, uncast
 $table->json('content')->nullable();
 $table->string('status')->default('draft')->index();
 $table->timestamp('published_at')->nullable();
+$table->string('ranking_order')->default('descending');  // added by add_ranking_order_to_articles_table
 $table->string('meta_title')->nullable();
 $table->text('meta_description')->nullable();
 $table->timestamps();
 ```
 
-Plus pivot tables `article_category` and `article_tag` backing the `categories`/`tags` many-to-many relations, and `affiliate_link_article` backing the content-derived `affiliateLinks` relation.
+`tldr` arrived later, in `2026_07_29_133726_add_tldr_to_articles_table.php` — a plain `Schema::table()` add/drop pair. The DB is PostgreSQL, so no `->after()` column positioning (that modifier is MySQL-only and is ignored here).
+
+Plus pivot tables `article_category` and `article_tag` backing the `categories`/`tags` many-to-many relations, and `affiliate_link_article` / `article_product` backing the content-derived `affiliateLinks` and `products` relations. `article_product` carries an extra `unsignedSmallInteger('rank')->nullable()` — stored even though it is derived, so a ranking can be queried in SQL rather than by parsing content JSON.
 
 ## Notable Filament v5 patterns used here
 
@@ -491,3 +589,6 @@ Plus pivot tables `article_category` and `article_tag` backing the `categories`/
 - Custom `getRedirectUrl()` override to force a full remount after server-side mutation of upload-derived state.
 - `updateQuietly()` to persist processed content without re-firing model events.
 - Rich editor extension via the supported plugin API (`RichContentPlugin` + `RichEditorTool` + modal `Action` + `EditorCommand`) for affiliate link insertion — no custom TipTap extensions (see [AffiliateLinkResource.md](AffiliateLinkResource.md)).
+- `Block::make()->label(fn (?array $state) => ...)` for content-derived block labels — the product card resolves the selected product's name, which is why its `product_id` select is `->live(onBlur: true)`.
+- `->actionSchemaModel(Model::class)` on a Builder-block select so a nested `createOptionForm()` validates against the created model's table rather than the article being edited (see [ProductResource.md](ProductResource.md#selecting-a-product-and-quick-create)).
+- Deriving ordinal data from block position instead of storing it, so reordering and deletion cannot corrupt it.

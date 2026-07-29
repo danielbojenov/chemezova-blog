@@ -1,6 +1,9 @@
 @php
     use App\Enums\ImageVariant;
+    use App\Enums\ProductCardOverride;
     use App\Filament\Support\ArticleRichContent;
+    use App\Models\Product;
+    use App\Support\Products\ArticleProductSyncer;
     use Illuminate\Support\Facades\Storage;
     use Illuminate\Support\Str;
 
@@ -11,6 +14,16 @@
     $mobileVariant = fn (string $path): string => str_ends_with($path, '.webp')
         ? Str::replaceLast('.webp', ImageVariant::Mobile->fileSuffix() . '.webp', $path)
         : $path;
+
+    // Ranks come from the same helper the syncer uses, so the number printed here
+    // always matches the one stored on the article_product pivot. Products are
+    // loaded once up front rather than per card.
+    $ranks = ArticleProductSyncer::ranksFor($getRecord());
+    $products = $ranks === []
+        ? collect()
+        : Product::with(['brand', 'affiliateLinks', 'primaryIngredient', 'ingredients'])
+            ->findMany(array_keys($ranks))
+            ->keyBy('id');
 @endphp
 
 <x-dynamic-component :component="$getEntryWrapperView()" :entry="$entry">
@@ -63,6 +76,132 @@
                         @endforeach
                     </div>
                     @break
+
+                @case('productCard')
+                    @php
+                        $product = $products->get((int) ($data['product_id'] ?? 0));
+                        $rank = $product ? ($ranks[$product->id] ?? null) : null;
+
+                        // Inherit the product's links, override them, or show none.
+                        $mode = ProductCardOverride::resolve($data['links_mode'] ?? null);
+                        $links = match ($mode) {
+                            ProductCardOverride::None => collect(),
+                            ProductCardOverride::Custom => $product
+                                ? \App\Models\AffiliateLink::findMany(
+                                    is_array($data['affiliate_link_ids'] ?? null) ? $data['affiliate_link_ids'] : [],
+                                )
+                                : collect(),
+                            ProductCardOverride::Inherit => $product ? $product->affiliateLinks : collect(),
+                        };
+
+                        // Same three-way rule for the description.
+                        $description = match (ProductCardOverride::resolve($data['description_mode'] ?? null)) {
+                            ProductCardOverride::None => null,
+                            ProductCardOverride::Custom => $data['description'] ?? null,
+                            ProductCardOverride::Inherit => $product?->description,
+                        };
+                    @endphp
+
+                    {{-- A card whose product has been deleted is skipped rather than half-rendered. --}}
+                    @if ($product)
+                        <div class="acp-block acp-product">
+                            @if ($rank !== null)
+                                <div class="acp-product-rank">#{{ $rank }}</div>
+                            @endif
+
+                            <div class="acp-product-body">
+                                @if (filled($product->image))
+                                    <img
+                                        class="acp-product-image"
+                                        src="{{ Storage::disk('public')->url($mobileVariant($product->image)) }}"
+                                        alt="{{ $product->name }}"
+                                        loading="lazy"
+                                    >
+                                @endif
+
+                                <div class="acp-product-main">
+                                    <h3 class="acp-product-name">{{ $product->name }}</h3>
+
+                                    @if ($product->brand)
+                                        <p class="acp-product-brand">{{ $product->brand->name }}</p>
+                                    @endif
+
+                                    <dl class="acp-product-facts">
+                                        @if (filled($product->rating))
+                                            <div>
+                                                <dt>Rating</dt>
+                                                <dd>{{ number_format((float) $product->rating, 1) }} / 5</dd>
+                                            </div>
+                                        @endif
+                                        @if (filled($product->price))
+                                            <div>
+                                                <dt>Price</dt>
+                                                <dd>{{ $product->currency }} {{ number_format((float) $product->price, 2) }}</dd>
+                                            </div>
+                                        @endif
+                                        @if (filled($product->price_per_dose))
+                                            <div>
+                                                <dt>Per dose</dt>
+                                                <dd>{{ $product->currency }} {{ number_format((float) $product->price_per_dose, 2) }}</dd>
+                                            </div>
+                                        @endif
+                                        @if ($product->form)
+                                            <div>
+                                                <dt>Form</dt>
+                                                <dd>{{ $product->form->getLabel() }}</dd>
+                                            </div>
+                                        @endif
+                                        @if ($product->composition)
+                                            <div>
+                                                <dt>Composition</dt>
+                                                <dd>{{ $product->composition->getLabel() }}</dd>
+                                            </div>
+                                        @endif
+                                        @if ($product->primaryIngredient)
+                                            <div>
+                                                <dt>Main ingredient</dt>
+                                                <dd>{{ $product->primaryIngredient->name }}</dd>
+                                            </div>
+                                        @endif
+                                        @if (filled($product->doses_per_pack))
+                                            <div>
+                                                <dt>Doses</dt>
+                                                <dd>{{ $product->doses_per_pack }}</dd>
+                                            </div>
+                                        @endif
+                                    </dl>
+
+                                    @if ($product->ingredients->isNotEmpty())
+                                        <p class="acp-product-ingredients">
+                                            @foreach ($product->ingredients as $ingredient)
+                                                <span>{{ $ingredient->name }}</span>
+                                            @endforeach
+                                        </p>
+                                    @endif
+
+                                    @if (filled($description))
+                                        <div class="acp-product-description acp-richtext">
+                                            {{ ArticleRichContent::renderer($description) }}
+                                        </div>
+                                    @endif
+
+                                    @if ($links->isNotEmpty())
+                                        <div class="acp-product-links">
+                                            @foreach ($links as $link)
+                                                {{-- /go/{slug} so the click is logged and rel is applied centrally. --}}
+                                                <a
+                                                    class="acp-product-buy"
+                                                    href="{{ $link->redirectPath() }}"
+                                                    rel="sponsored nofollow"
+                                                >{{ $link->retailer ?? $link->name }}</a>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                    @break
             @endswitch
         @empty
             <p class="acp-empty">This article has no content yet.</p>
@@ -70,106 +209,4 @@
     </div>
 </x-dynamic-component>
 
-@once
-    <style>
-        /* Self-contained styling for the article content preview. The admin panel does
-           not ship the Tailwind Typography plugin, so rich-text HTML is styled here
-           directly rather than relying on `prose`. */
-        .article-content-preview {
-            --acp-border: rgb(228 228 231);          /* zinc-200 */
-            --acp-muted: rgb(113 113 122);           /* zinc-500 */
-            --acp-accent: rgb(217 119 6);            /* amber-600 (panel primary) */
-            font-size: 0.95rem;
-            line-height: 1.7;
-        }
-        .dark .article-content-preview {
-            --acp-border: rgb(255 255 255 / 0.1);
-            --acp-muted: rgb(161 161 170);           /* zinc-400 */
-            --acp-accent: rgb(251 191 36);           /* amber-400 */
-        }
-
-        /* Padding between blocks + a slight separator between them. */
-        .article-content-preview .acp-block {
-            padding: 1.5rem 0;
-        }
-        .article-content-preview .acp-block + .acp-block {
-            border-top: 1px solid var(--acp-border);
-        }
-        .article-content-preview .acp-block:first-child {
-            padding-top: 0;
-        }
-
-        /* Rich text typography (restores element styling stripped by Preflight). */
-        .acp-richtext :is(h1, h2, h3, h4) {
-            font-weight: 600;
-            line-height: 1.3;
-            margin: 1.25rem 0 0.5rem;
-        }
-        .acp-richtext h1 { font-size: 1.6rem; }
-        .acp-richtext h2 { font-size: 1.35rem; }
-        .acp-richtext h3 { font-size: 1.15rem; }
-        .acp-richtext :first-child { margin-top: 0; }
-        .acp-richtext p { margin: 0.75rem 0; }
-        .acp-richtext :is(ul, ol) { margin: 0.75rem 0; padding-left: 1.5rem; }
-        .acp-richtext ul { list-style: disc; }
-        .acp-richtext ol { list-style: decimal; }
-        .acp-richtext li { margin: 0.25rem 0; }
-        .acp-richtext a { color: var(--acp-accent); text-decoration: underline; }
-        .acp-richtext blockquote {
-            margin: 1rem 0;
-            padding-left: 1rem;
-            border-left: 3px solid var(--acp-border);
-            color: var(--acp-muted);
-        }
-        .acp-richtext :is(strong, b) { font-weight: 600; }
-
-        /* Images: -mobile variant, centered, capped, with a muted caption. */
-        .acp-figure { text-align: center; }
-        .acp-figure img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 0.5rem;
-            display: inline-block;
-        }
-        .acp-figure figcaption {
-            margin-top: 0.5rem;
-            font-size: 0.85rem;
-            font-style: italic;
-            color: var(--acp-muted);
-        }
-
-        /* FAQ: standout heading + accordion cards. */
-        .acp-faq-heading {
-            font-size: 1.3rem;
-            font-weight: 700;
-            padding-bottom: 0.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--acp-accent);
-        }
-        .acp-faq-item {
-            border: 1px solid var(--acp-border);
-            border-radius: 0.5rem;
-            padding: 0.75rem 1rem;
-            margin-bottom: 0.75rem;
-        }
-        .acp-faq-item > summary {
-            cursor: pointer;
-            font-weight: 600;
-            list-style: none;
-        }
-        .acp-faq-item > summary::-webkit-details-marker { display: none; }
-        .acp-faq-item > summary::before {
-            content: '▸';
-            display: inline-block;
-            margin-right: 0.5rem;
-            color: var(--acp-accent);
-            transition: transform 0.15s ease;
-        }
-        .acp-faq-item[open] > summary::before { transform: rotate(90deg); }
-        .acp-faq-answer { margin-top: 0.5rem; color: var(--acp-muted); }
-        .acp-faq-answer p { margin: 0.5rem 0; }
-        .acp-faq-answer :first-child { margin-top: 0; }
-
-        .acp-empty { color: var(--acp-muted); font-size: 0.9rem; }
-    </style>
-@endonce
+@include('filament.infolists.article-content-styles')

@@ -63,4 +63,14 @@ class ArticleFactory extends Factory
             'published_at' => fake()->dateTimeBetween('+1 day', '+1 month'),
         ]);
     }
+
+    /**
+     * The `tldr` column is null by default, matching the optional field.
+     */
+    public function withTldr(?string $html = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'tldr' => $html ?? '<p>'.fake()->sentence(12).'</p>',
+        ]);
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ArticleStatus;
+use App\Enums\RankingOrder;
 use Database\Factories\ArticleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Storage;
 /**
  * @mixin IdeHelperArticle
  */
-#[Fillable(['title', 'slug', 'excerpt', 'content', 'status', 'published_at', 'meta_title', 'meta_description'])]
+#[Fillable(['title', 'slug', 'excerpt', 'tldr', 'content', 'status', 'published_at', 'ranking_order', 'meta_title', 'meta_description'])]
 class Article extends Model
 {
     /** @use HasFactory<ArticleFactory> */
@@ -37,6 +38,7 @@ class Article extends Model
             'content' => 'array',
             'status' => ArticleStatus::class,
             'published_at' => 'datetime',
+            'ranking_order' => RankingOrder::class,
         ];
     }
 
@@ -64,5 +66,17 @@ class Article extends Model
     public function affiliateLinks(): BelongsToMany
     {
         return $this->belongsToMany(AffiliateLink::class);
+    }
+
+    /**
+     * Products placed in this article's content as product cards, synced on save.
+     * The pivot rank is derived from each card's position, so it is ordered here
+     * by position rather than by rank, which may run either way.
+     *
+     * @return BelongsToMany<Product, $this>
+     */
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class)->withPivot('rank');
     }
 }

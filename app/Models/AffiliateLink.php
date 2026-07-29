@@ -40,6 +40,16 @@ class AffiliateLink extends Model
     }
 
     /**
+     * Products carrying this link as one of their retailer links.
+     *
+     * @return BelongsToMany<Product, $this>
+     */
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class);
+    }
+
+    /**
      * @return HasMany<AffiliateLinkClick, $this>
      */
     public function clicks(): HasMany
