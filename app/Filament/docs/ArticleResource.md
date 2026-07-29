@@ -8,10 +8,14 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 |---|---|
 | Resource | `app/Filament/Resources/Articles/ArticleResource.php` |
 | Form schema | `app/Filament/Resources/Articles/Schemas/ArticleForm.php` |
+| Infolist schema (view) | `app/Filament/Resources/Articles/Schemas/ArticleInfolist.php` |
 | Table schema | `app/Filament/Resources/Articles/Tables/ArticlesTable.php` |
 | List page | `app/Filament/Resources/Articles/Pages/ListArticles.php` |
 | Create page | `app/Filament/Resources/Articles/Pages/CreateArticle.php` |
+| View page | `app/Filament/Resources/Articles/Pages/ViewArticle.php` |
 | Edit page | `app/Filament/Resources/Articles/Pages/EditArticle.php` |
+| Reusable content entry (view) | `app/Filament/Support/ArticleContentEntry.php` |
+| Content preview Blade view | `resources/views/filament/infolists/article-content.blade.php` |
 | Model | `app/Models/Article.php` |
 | Related models | `app/Models/Category.php`, `app/Models/Tag.php` |
 | Status enum | `app/Enums/ArticleStatus.php` |
@@ -19,6 +23,10 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Reusable slug field | `app/Filament/Support/SlugInput.php` |
 | Reusable image block | `app/Filament/Support/ImageBlock.php` |
 | Reusable FAQ block | `app/Filament/Support/FaqBlock.php` |
+| Shared article rich editor | `app/Filament/Support/ArticleRichEditor.php` |
+| Affiliate link editor plugin | `app/Filament/Support/AffiliateLinkPlugin.php`, `app/Filament/Support/AffiliateLinkAction.php` |
+| Rich content display renderer | `app/Filament/Support/ArticleRichContent.php` |
+| Affiliate placement syncer | `app/Support/AffiliateLinks/ArticleAffiliateLinkSyncer.php` |
 | Image pipeline orchestrator | `app/Support/Images/ArticleImageProcessor.php` |
 | WebP conversion | `app/Support/Images/ImageConverter.php` |
 | Configurable image sizes | `app/Support/Images/ImageSizeSettings.php` |
@@ -44,13 +52,14 @@ class ArticleResource extends Resource
         return [
             'index'  => ListArticles::route('/'),
             'create' => CreateArticle::route('/create'),
+            'view'   => ViewArticle::route('/{record}'),
             'edit'   => EditArticle::route('/{record}/edit'),
         ];
     }
 }
 ```
 
-Three standard routes only — no dedicated "view" page. Navigation label/slug default from the model name; only the icon is customized.
+Four routes. The `view` route is a read-only, reader-facing preview of the article (see [Infolist / View schema](#infolist--view-schema-articleinfolist)) — reachable via the `ViewAction` on both the table row and the Edit page header. Navigation label/slug default from the model name; only the icon is customized.
 
 ## Form schema (`ArticleForm`)
 
@@ -96,7 +105,7 @@ Builder::make('content')
             ->label('Rich text')
             ->icon(Heroicon::Bars3BottomLeft)
             ->schema([
-                RichEditor::make('content')->hiddenLabel()->required(),
+                ArticleRichEditor::make('content')->hiddenLabel()->required(),
             ]),
         ImageBlock::make(),
         FaqBlock::make(),
@@ -107,6 +116,8 @@ Builder::make('content')
 ```
 
 A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`, `faq`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
+
+All rich text HTML in articles (the `richText` block and the FAQ answers) is edited through `ArticleRichEditor::make()`, a shared factory that returns a `RichEditor` with the affiliate link plugin attached and its "Insert affiliate link" toolbar button enabled — see [AffiliateLinkResource.md](AffiliateLinkResource.md#insertion-ux-the-rich-editor-plugin) for the plugin's mechanics.
 
 ### Section "Taxonomy" (2 columns)
 
@@ -138,9 +149,37 @@ Textarea::make('meta_description')->rows(3),
 
 Note: `excerpt` is a fillable, DB-backed column (see [Model](#model-article)) but currently has **no form field** — it's not editable through this resource yet.
 
+## Infolist / View schema (`ArticleInfolist`)
+
+The `view` page (`ViewArticle` extends `ViewRecord`) renders a read-only, reader-facing preview of the article instead of the form. `ViewArticle` delegates to `ArticleInfolist::configure()` from its `infolist()` method — the same thin-coordinator split used for the form. `ViewRecord` auto-provides an Edit action in the page header, so no header config is needed.
+
+Four `Section`s parallel the form: **Article** (title as a large bold `TextEntry`, `status` badge via the enum, `published_at` dateTime), **Taxonomy** (`categories.name`/`tags.name` badges), **Content** (the block preview, below), and **SEO** (collapsed `meta_title`/`meta_description`). Entries use a `->placeholder('—')` for empty values.
+
+### Rendering the `content` Builder blocks
+
+Filament has **no built-in Builder infolist entry**, so the JSON block array is rendered by a custom entry plus a Blade view:
+
+```php
+// app/Filament/Support/ArticleContentEntry.php
+class ArticleContentEntry extends Entry
+{
+    protected string $view = 'filament.infolists.article-content';
+}
+```
+
+The Blade view iterates `$getState()` and renders each block type as it will appear to the end user:
+
+- `richText` and `faq` answers — rendered through `ArticleRichContent::renderer($html)`, a thin wrapper around `Filament\Forms\Components\RichEditor\RichContentRenderer` that outputs (and sanitizes) the stored RichEditor HTML and centrally injects `rel="sponsored nofollow"` on every affiliate `/go/` link (the `rel` attribute is never stored in content — see [AffiliateLinkResource.md](AffiliateLinkResource.md#central-relsponsored-nofollow-at-render-time)).
+- `image` — a `<figure>` whose `src` is the **`-mobile` variant** derived from the stored Original path (`Str::replaceLast('.webp', ImageVariant::Mobile->fileSuffix().'.webp', $path)`), served via `Storage::disk('public')->url()`, plus alt text and an optional `<figcaption>`.
+- `faq` — a standout heading followed by a `<details>`/`<summary>` accordion per question/answer pair.
+
+Every array access is null-guarded (`?? ''`) because `content` is user-authored JSON; an empty `content` shows a fallback message. The custom entry lives in `app/Filament/Support/` alongside the form-side reusable components (`SlugInput`, `ImageBlock`, `FaqBlock`).
+
+**Styling.** The admin panel does **not** ship the Tailwind Typography plugin, so `prose` classes are no-ops and Preflight would otherwise leave rich-text HTML unstyled (flattened headings/lists). The Blade view therefore carries its own self-contained, `@once` scoped `<style>` block (keyed off `.article-content-preview`, with `.dark` overrides) that restores rich-text typography, adds inter-block padding + a 1px separator, and styles the FAQ accordion. This keeps the feature dependency-free — no new npm package, no Filament custom-theme build step.
+
 ## Table (`ArticlesTable`)
 
-Columns: `id` (sortable), `title` (searchable, sortable), `slug` (searchable, hidden-by-default toggle), `status` (badge, colored/labeled via the `ArticleStatus` enum), `published_at` (dateTime, sortable), `categories.name` (badge, relationship column), `tags.name` (badge, hidden-by-default toggle), `created_at`/`updated_at` (dateTime, sortable, hidden-by-default toggle).
+Columns: `id` (sortable), `title` (searchable, sortable, `->url()` linking to the **edit** page — the row title goes to Edit, while the read-only View page is reached only via the `ViewAction`), `slug` (searchable, hidden-by-default toggle), `status` (badge, colored/labeled via the `ArticleStatus` enum), `published_at` (dateTime, sortable), `categories.name` (badge, relationship column), `tags.name` (badge, hidden-by-default toggle), `created_at`/`updated_at` (dateTime, sortable, hidden-by-default toggle).
 
 `->defaultSort('created_at', 'desc')`.
 
@@ -149,7 +188,7 @@ Filters:
 - `SelectFilter::make('categories')->relationship('categories', 'name')->multiple()->preload()`
 - `SelectFilter::make('tags')->relationship('tags', 'name')->multiple()->preload()`
 
-Actions: `recordActions([EditAction::make()])`, `toolbarActions([BulkActionGroup::make([DeleteBulkAction::make()])])`. No view action, no custom table actions.
+Actions: `recordActions([ViewAction::make(), EditAction::make()])`, `toolbarActions([BulkActionGroup::make([DeleteBulkAction::make()])])`. The `ViewAction` opens the read-only [view page](#infolist--view-schema-articleinfolist); no other custom table actions.
 
 ## Reusable custom components
 
@@ -221,7 +260,7 @@ public static function make(): Block
                 ->hiddenLabel()
                 ->schema([
                     TextInput::make('question')->required()->maxLength(500)->live(onBlur: true),
-                    RichEditor::make('answer')->required(),
+                    ArticleRichEditor::make('answer')->required(),
                 ])
                 ->required()->minItems(1)
                 ->collapsible()
@@ -232,7 +271,7 @@ public static function make(): Block
 }
 ```
 
-A FAQ content block: an optional `heading` plus a `Repeater` of question/answer pairs (answers are rich text HTML), intended to render as an accordion on the frontend. `question` is `->live(onBlur: true)` so `itemLabel()` shows the question text on collapsed repeater items. The image pipeline ignores this block entirely (it only processes `type === 'image'`).
+A FAQ content block: an optional `heading` plus a `Repeater` of question/answer pairs (answers are rich text HTML via the shared `ArticleRichEditor`, so FAQ answers can also carry affiliate links), intended to render as an accordion on the frontend. `question` is `->live(onBlur: true)` so `itemLabel()` shows the question text on collapsed repeater items. The image pipeline ignores this block entirely (it only processes `type === 'image'`).
 
 Stored block shape:
 
@@ -283,6 +322,7 @@ protected function afterCreate(): void
 
     if ($record instanceof Article) {
         app(ArticleImageProcessor::class)->process($record);
+        app(ArticleAffiliateLinkSyncer::class)->sync($record);
     }
 }
 ```
@@ -294,7 +334,7 @@ protected bool $hasProcessedImages = false;
 
 protected function getHeaderActions(): array
 {
-    return [DeleteAction::make()];
+    return [ViewAction::make(), DeleteAction::make()];
 }
 
 protected function mutateFormDataBeforeSave(array $data): array
@@ -308,6 +348,7 @@ protected function afterSave(): void
 
     if ($record instanceof Article) {
         $this->hasProcessedImages = app(ArticleImageProcessor::class)->process($record);
+        app(ArticleAffiliateLinkSyncer::class)->sync($record);
     }
 }
 
@@ -320,6 +361,8 @@ protected function getRedirectUrl(): ?string
     return parent::getRedirectUrl();
 }
 ```
+
+Both hooks run the affiliate placement syncer after the image processor, so it scans the final (path-rewritten) content — it extracts every `/go/{slug}` href from rich text blocks and FAQ answers and syncs the `affiliate_link_article` pivot (see [AffiliateLinkResource.md](AffiliateLinkResource.md#placement-tracking)).
 
 `getRedirectUrl()` is overridden to force a full page remount after image processing. `ArticleImageProcessor` rewrites `content`'s image paths from `articles/tmp/...` to `articles/{id}/...` *after* the form has already submitted; Livewire's normal in-place state refill doesn't pick up that rewritten path for the FilePond preview, so the edit page redirects to itself to force a clean reload with the new path.
 
@@ -396,12 +439,13 @@ class Article extends Model
         ];
     }
 
-    public function categories(): BelongsToMany { return $this->belongsToMany(Category::class); }
-    public function tags(): BelongsToMany       { return $this->belongsToMany(Tag::class); }
+    public function categories(): BelongsToMany     { return $this->belongsToMany(Category::class); }
+    public function tags(): BelongsToMany           { return $this->belongsToMany(Tag::class); }
+    public function affiliateLinks(): BelongsToMany { return $this->belongsToMany(AffiliateLink::class); }
 }
 ```
 
-Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`).
+Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`). `affiliateLinks` (pivot `affiliate_link_article`) is not edited directly — it's derived from content by the placement syncer on every save.
 
 ## Enums
 
@@ -432,7 +476,7 @@ $table->text('meta_description')->nullable();
 $table->timestamps();
 ```
 
-Plus pivot tables `article_category` and `article_tag` backing the `categories`/`tags` many-to-many relations.
+Plus pivot tables `article_category` and `article_tag` backing the `categories`/`tags` many-to-many relations, and `affiliate_link_article` backing the content-derived `affiliateLinks` relation.
 
 ## Notable Filament v5 patterns used here
 
@@ -440,9 +484,10 @@ Plus pivot tables `article_category` and `article_tag` backing the `categories`/
 - `Get`/`Set` closures for cross-field reactivity (slug generation; `published_at` visibility tied to `status`).
 - `->live()` on a `Select` to drive reactive `visible()`/`required()` closures elsewhere in the form.
 - Enum-driven `Select` options (`ArticleStatus::class` passed directly to `->options()`) via `HasLabel`/`HasColor`, reused identically for the table's badge column and filter.
-- `Builder` field (polymorphic block repeater) for flexible CMS-style content composition.
+- `Builder` field (polymorphic block repeater) for flexible CMS-style content composition, with a read-only counterpart: a custom infolist `Entry` + Blade view renders the same blocks on the view page via `RichContentRenderer` (Filament has no built-in Builder entry).
 - `->suffixAction()` for inline generate-from-another-field UX.
 - `->createOptionForm()` on relationship `Select`s instead of RelationManagers for lightweight inline taxonomy creation.
 - Deferred two-phase image processing: uploads stage in a tmp directory; a page lifecycle hook (`afterCreate`/`afterSave`) performs the real move, variant generation, and content rewrite.
 - Custom `getRedirectUrl()` override to force a full remount after server-side mutation of upload-derived state.
 - `updateQuietly()` to persist processed content without re-firing model events.
+- Rich editor extension via the supported plugin API (`RichContentPlugin` + `RichEditorTool` + modal `Action` + `EditorCommand`) for affiliate link insertion — no custom TipTap extensions (see [AffiliateLinkResource.md](AffiliateLinkResource.md)).

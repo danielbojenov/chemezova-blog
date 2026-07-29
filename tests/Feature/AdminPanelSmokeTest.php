@@ -39,6 +39,27 @@ test('article edit page loads with image and faq blocks in the content', functio
     $this->get(ArticleResource::getUrl('edit', ['record' => $article]))->assertSuccessful();
 });
 
+test('the affiliate link tool renders in rich text and faq answer editors', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'richText', 'data' => ['content' => '<p>Intro</p>']],
+            ['type' => 'faq', 'data' => [
+                'heading' => 'FAQ',
+                'items' => [
+                    ['question' => 'Where to buy?', 'answer' => '<p>Here.</p>'],
+                ],
+            ]],
+        ],
+    ]);
+
+    $response = $this->get(ArticleResource::getUrl('edit', ['record' => $article]));
+
+    $response->assertSuccessful();
+
+    // One toolbar button per editor: the rich text block and the FAQ answer.
+    expect(substr_count($response->getContent(), 'Insert affiliate link'))->toBeGreaterThanOrEqual(2);
+});
+
 test('image settings page loads', function () {
     $this->get(ImageSettings::getUrl())->assertSuccessful();
 });

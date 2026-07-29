@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\Articles\Schemas;
 
 use App\Enums\ArticleStatus;
+use App\Filament\Support\ArticleRichEditor;
 use App\Filament\Support\FaqBlock;
 use App\Filament\Support\ImageBlock;
 use App\Filament\Support\SlugInput;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -52,7 +52,7 @@ class ArticleForm
                                     ->label('Rich text')
                                     ->icon(Heroicon::Bars3BottomLeft)
                                     ->schema([
-                                        RichEditor::make('content')
+                                        ArticleRichEditor::make('content')
                                             ->hiddenLabel()
                                             ->required(),
                                     ]),

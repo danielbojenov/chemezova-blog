@@ -4,7 +4,6 @@ namespace App\Filament\Support;
 
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\Repeater;
-use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Support\Icons\Heroicon;
 
@@ -29,7 +28,7 @@ class FaqBlock
                             ->required()
                             ->maxLength(500)
                             ->live(onBlur: true),
-                        RichEditor::make('answer')
+                        ArticleRichEditor::make('answer')
                             ->required(),
                     ])
                     ->required()

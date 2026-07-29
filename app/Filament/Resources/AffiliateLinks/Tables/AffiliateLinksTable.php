@@ -1,10 +1,9 @@
 <?php
 
-namespace App\Filament\Resources\Articles\Tables;
+namespace App\Filament\Resources\AffiliateLinks\Tables;
 
-use App\Enums\ArticleStatus;
-use App\Filament\Resources\Articles\ArticleResource;
-use App\Models\Article;
+use App\Enums\AffiliateLinkStatus;
+use App\Models\AffiliateLink;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -13,31 +12,38 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
-class ArticlesTable
+class AffiliateLinksTable
 {
     public static function configure(Table $table): Table
     {
         return $table
             ->columns([
-                TextColumn::make('id')
-                    ->label('ID')
+                TextColumn::make('name')
+                    ->searchable()
                     ->sortable(),
-                TextColumn::make('title')
-                    ->searchable()
-                    ->sortable()
-                    ->url(fn (Article $record): string => ArticleResource::getUrl('edit', ['record' => $record])),
                 TextColumn::make('slug')
+                    ->label('Redirect URL')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->formatStateUsing(fn (string $state): string => "/go/{$state}")
+                    ->copyable()
+                    ->copyableState(fn (AffiliateLink $record): string => url($record->redirectPath()))
+                    ->copyMessage('Redirect URL copied'),
+                TextColumn::make('retailer')
+                    ->searchable()
+                    ->toggleable(),
                 TextColumn::make('status')
                     ->badge(),
-                TextColumn::make('published_at')
-                    ->dateTime()
+                TextColumn::make('clicks_count')
+                    ->counts('clicks')
+                    ->label('Clicks')
                     ->sortable(),
-                TextColumn::make('categories.name')
-                    ->badge(),
-                TextColumn::make('tags.name')
-                    ->badge()
+                TextColumn::make('articles_count')
+                    ->counts('articles')
+                    ->label('Articles')
+                    ->sortable(),
+                TextColumn::make('url')
+                    ->label('Destination URL')
+                    ->limit(40)
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -48,18 +54,9 @@ class ArticlesTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('created_at', 'desc')
             ->filters([
                 SelectFilter::make('status')
-                    ->options(ArticleStatus::class),
-                SelectFilter::make('categories')
-                    ->relationship('categories', 'name')
-                    ->multiple()
-                    ->preload(),
-                SelectFilter::make('tags')
-                    ->relationship('tags', 'name')
-                    ->multiple()
-                    ->preload(),
+                    ->options(AffiliateLinkStatus::class),
             ])
             ->recordActions([
                 ViewAction::make(),

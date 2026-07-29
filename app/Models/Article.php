@@ -55,4 +55,14 @@ class Article extends Model
     {
         return $this->belongsToMany(Tag::class);
     }
+
+    /**
+     * Affiliate links placed in this article's content, synced on save.
+     *
+     * @return BelongsToMany<AffiliateLink, $this>
+     */
+    public function affiliateLinks(): BelongsToMany
+    {
+        return $this->belongsToMany(AffiliateLink::class);
+    }
 }

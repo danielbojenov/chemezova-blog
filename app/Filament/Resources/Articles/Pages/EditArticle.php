@@ -4,8 +4,10 @@ namespace App\Filament\Resources\Articles\Pages;
 
 use App\Filament\Resources\Articles\ArticleResource;
 use App\Models\Article;
+use App\Support\AffiliateLinks\ArticleAffiliateLinkSyncer;
 use App\Support\Images\ArticleImageProcessor;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\ViewAction;
 use Filament\Resources\Pages\EditRecord;
 
 class EditArticle extends EditRecord
@@ -17,6 +19,7 @@ class EditArticle extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            ViewAction::make(),
             DeleteAction::make(),
         ];
     }
@@ -36,6 +39,7 @@ class EditArticle extends EditRecord
 
         if ($record instanceof Article) {
             $this->hasProcessedImages = app(ArticleImageProcessor::class)->process($record);
+            app(ArticleAffiliateLinkSyncer::class)->sync($record);
         }
     }
 

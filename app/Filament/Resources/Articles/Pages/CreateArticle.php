@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Articles\Pages;
 
 use App\Filament\Resources\Articles\ArticleResource;
 use App\Models\Article;
+use App\Support\AffiliateLinks\ArticleAffiliateLinkSyncer;
 use App\Support\Images\ArticleImageProcessor;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -26,6 +27,7 @@ class CreateArticle extends CreateRecord
 
         if ($record instanceof Article) {
             app(ArticleImageProcessor::class)->process($record);
+            app(ArticleAffiliateLinkSyncer::class)->sync($record);
         }
     }
 }

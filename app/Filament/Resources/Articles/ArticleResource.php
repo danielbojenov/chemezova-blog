@@ -2,12 +2,13 @@
 
 namespace App\Filament\Resources\Articles;
 
+use App\Enums\ArticleStatus;
 use App\Filament\Resources\Articles\Pages\CreateArticle;
 use App\Filament\Resources\Articles\Pages\EditArticle;
 use App\Filament\Resources\Articles\Pages\ListArticles;
+use App\Filament\Resources\Articles\Pages\ViewArticle;
 use App\Filament\Resources\Articles\Schemas\ArticleForm;
 use App\Filament\Resources\Articles\Tables\ArticlesTable;
-use App\Enums\ArticleStatus;
 use App\Models\Article;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -61,6 +62,7 @@ class ArticleResource extends Resource
         return [
             'index' => ListArticles::route('/'),
             'create' => CreateArticle::route('/create'),
+            'view' => ViewArticle::route('/{record}'),
             'edit' => EditArticle::route('/{record}/edit'),
         ];
     }
