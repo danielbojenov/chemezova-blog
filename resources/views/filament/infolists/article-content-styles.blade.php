@@ -28,6 +28,19 @@
             padding-top: 0;
         }
 
+        /* Section headings are their own block; they lead the block that follows,
+           so the usual inter-block gap and separator are dropped between them. */
+        .article-content-preview .acp-heading {
+            font-size: 1.35rem;
+            font-weight: 700;
+            line-height: 1.3;
+            padding-bottom: 0.25rem;
+        }
+        .article-content-preview .acp-heading + .acp-block {
+            border-top: 0;
+            padding-top: 0;
+        }
+
         /* Rich text typography (restores element styling stripped by Preflight). */
         .acp-richtext :is(h1, h2, h3, h4) {
             font-weight: 600;

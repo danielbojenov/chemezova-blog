@@ -24,6 +24,8 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Status enum | `app/Enums/ArticleStatus.php` |
 | Image variant enum | `app/Enums/ImageVariant.php` |
 | Reusable slug field | `app/Filament/Support/SlugInput.php` |
+| Reusable heading block | `app/Filament/Support/HeadingBlock.php` |
+| Heading/anchor extraction | `app/Support/Articles/ArticleHeadings.php` |
 | Reusable image block | `app/Filament/Support/ImageBlock.php` |
 | Reusable FAQ block | `app/Filament/Support/FaqBlock.php` |
 | Reusable product card block | `app/Filament/Support/ProductCardBlock.php` |
@@ -111,6 +113,7 @@ This exists because Filament form state for a `status` field can hold either the
 RichEditor::make('tldr')
     ->hiddenLabel()
     ->columnSpanFull()
+    ->disableToolbarButtons(['h2', 'h3'])
     ->helperText('Optional short summary shown above the article.'),
 ```
 
@@ -118,6 +121,8 @@ An optional one-paragraph summary of the article, stored in its own nullable `tl
 
 - **It is a separate column, not a `content` block type.** The TLDR is structurally distinct from the body — there is exactly zero or one per article and it always renders first — so modelling it as a block (which editors could add multiple times, or reorder into the middle of the body) would be wrong. It also lets the public site query the summary without parsing the block JSON.
 - **It uses a plain `RichEditor`, not `ArticleRichEditor`.** The shared factory exists to attach the affiliate link plugin; affiliate placements are a body-only feature, so the TLDR gets the stock toolbar with no "Insert affiliate link" button. Consequently `ArticleAffiliateLinkSyncer` still scans **`content` only** — a `/go/` href hand-pasted into the TLDR will *not* be attached to the article in the `affiliate_link_article` pivot and will not appear in placement tracking. (It is still rendered with `rel="sponsored nofollow"`, because the view goes through `ArticleRichContent::renderer()` like every other rich text surface.)
+
+- **Its toolbar has no heading buttons.** A one-paragraph summary has nothing to subdivide, so the stock toolbar is kept and `disableToolbarButtons(['h2', 'h3'])` simply subtracts — see [Heading policy](#heading-policy).
 
 `RichEditor` stores raw HTML by default, so `tldr` is a plain nullable `text` column with **no cast** on the model.
 
@@ -132,6 +137,7 @@ Select::make('ranking_order')
 
 Builder::make('content')
     ->blocks([
+        HeadingBlock::make(),
         Block::make('richText')
             ->label('Rich text')
             ->icon(Heroicon::Bars3BottomLeft)
@@ -147,9 +153,30 @@ Builder::make('content')
     ->addActionLabel('Add block'),
 ```
 
-A Filament `Builder` field models the article body as an ordered array of typed blocks (`richText`, `image`, `faq`, `productCard`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
+A Filament `Builder` field models the article body as an ordered array of typed blocks (`h2`, `richText`, `image`, `faq`, `productCard`), persisted as JSON in the `content` column (cast to `array` on the model). Editors can reorder, collapse, and add blocks freely — this is the CMS-style content editor for the article.
 
-All rich text HTML in articles (the `richText` block and the FAQ answers) is edited through `ArticleRichEditor::make()`, a shared factory that returns a `RichEditor` with the affiliate link plugin attached and its "Insert affiliate link" toolbar button enabled — see [AffiliateLinkResource.md](AffiliateLinkResource.md#insertion-ux-the-rich-editor-plugin) for the plugin's mechanics.
+All rich text HTML in articles (the `richText` block, the FAQ answers, and the product card description override) is edited through `ArticleRichEditor`, a shared factory that returns a `RichEditor` with the affiliate link plugin attached and its "Insert affiliate link" toolbar button enabled — see [AffiliateLinkResource.md](AffiliateLinkResource.md#insertion-ux-the-rich-editor-plugin) for the plugin's mechanics.
+
+### Heading blocks
+
+`HeadingBlock::make()` is a one-field block (`text`, required, max 255) that holds a single section heading. A heading is a block rather than H2 markup typed inside a rich text block for two reasons:
+
+- **The outline is visible while editing.** The block's `label()` closure returns `H2 — {text}` (the `HeadingBlock::LABEL_PREFIX` convention shared with `ProductCardBlock`, falling back to a bare `H2` when the field is empty), so a collapsed builder reads as the article's table of contents instead of a stack of identical "Rich text" rows, and a heading is recognisable as one rather than as body copy. The `text` input is `live(onBlur: true)` so that label tracks edits without a round trip per keystroke.
+- **The outline is machine-readable.** `ArticleHeadings::extract()` reads the sections straight off the stored JSON — no HTML parsing — which is what a frontend table of contents will consume. See [Rendering](#rendering-the-content-builder-blocks).
+
+#### Heading policy
+
+Because H2 is a block, no editor in the app offers an H2 button; each surface gets only the headings that make sense inside it:
+
+| Surface | Heading buttons |
+| --- | --- |
+| `richText` block — `ArticleRichEditor::make()` | `h3`, `h4` (sub-headings within a section) |
+| FAQ answer, product card description — `ArticleRichEditor::withoutHeadings()` | none (prose nested in a block that already has a heading) |
+| TLDR — plain `RichEditor` | none |
+
+`ArticleRichEditor` sets the whole toolbar with `toolbarButtons()` rather than `enableToolbarButtons()`: the latter only *appends* to Filament's defaults (see [AffiliateLinkResource.md](AffiliateLinkResource.md#insertion-ux-the-rich-editor-plugin)), so it can neither drop `h2` nor place `h4` next to `h3`. Both variants share one private base method, differing only in the heading group.
+
+Articles written before this split keep whatever `<h2>` is already inside their stored rich text HTML — it still renders; there is no migration. Only *new* H2s must be blocks.
 
 `ranking_order` sits in this section rather than with the article metadata because it numbers the product cards in the builder directly below it. See [Product card blocks](#product-card-blocks).
 
@@ -232,6 +259,7 @@ class ArticleContentEntry extends Entry
 
 The Blade view iterates `$getState()` and renders each block type as it will appear to the end user:
 
+- `h2` — an `<h2>` carrying an anchor id, so section links work. Ids come from `App\Support\Articles\ArticleHeadings::extract()`, which walks the content array, slugs each heading's text (`Str::slug()`, falling back to `section` when a heading is all punctuation or emoji and slugs to nothing), and suffixes repeats `-2`, `-3`, … so ids stay unique. It returns the headings keyed by block position, which is both what the view looks up while iterating and what a frontend table of contents wants via `array_values()` — one helper means the TOC's links and the rendered anchors cannot drift apart. Because the heading introduces the block below it, the CSS drops the usual inter-block separator and top padding immediately after `.acp-heading`.
 - `richText` and `faq` answers — rendered through `ArticleRichContent::renderer($html)`, a thin wrapper around `Filament\Forms\Components\RichEditor\RichContentRenderer` that outputs (and sanitizes) the stored RichEditor HTML and centrally injects `rel="sponsored nofollow"` on every affiliate `/go/` link (the `rel` attribute is never stored in content — see [AffiliateLinkResource.md](AffiliateLinkResource.md#central-relsponsored-nofollow-at-render-time)).
 - `image` — a `<figure>` whose `src` is the **`-mobile` variant** derived from the stored Original path (`Str::replaceLast('.webp', ImageVariant::Mobile->fileSuffix().'.webp', $path)`), served via `Storage::disk('public')->url()`, plus alt text and an optional `<figcaption>`.
 - `faq` — a standout heading followed by a `<details>`/`<summary>` accordion per question/answer pair.

@@ -53,16 +53,24 @@ The route is public (no auth) and registered in `routes/web.php`.
 
 ## Insertion UX (the rich editor plugin)
 
-Both article rich text surfaces (the `richText` block and FAQ answers) are built via `ArticleRichEditor::make()`:
+Every article rich text surface (the `richText` block, FAQ answers, and the product card description override) is built via `ArticleRichEditor`, whose two variants share one private base:
 
 ```php
 // app/Filament/Support/ArticleRichEditor.php
 return RichEditor::make($name)
     ->plugins([AffiliateLinkPlugin::make()])
-    ->enableToolbarButtons(['affiliateLink']);
+    ->toolbarButtons(array_values(array_filter([
+        ['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link'],
+        $headingButtons, // ['h3', 'h4'] for body copy, [] for FAQ answers and product descriptions
+        ['alignStart', 'alignCenter', 'alignEnd'],
+        ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+        ['table', 'attachFiles'],
+        ['undo', 'redo'],
+        ['affiliateLink'],
+    ])));
 ```
 
-`enableToolbarButtons()` **appends** to the default toolbar (`toolbarButtons()` would replace it); the affiliate button lands as its own trailing toolbar group.
+The toolbar is declared in full rather than with `enableToolbarButtons(['affiliateLink'])`, because that method only **appends** to Filament's defaults: it cannot remove the default `h2` button (H2 is a [dedicated builder block](ArticleResource.md#heading-blocks)) and it would strand `h4` in the trailing group instead of beside `h3`. The affiliate button is still its own trailing group, as before.
 
 `AffiliateLinkPlugin` implements `Filament\Forms\Components\RichEditor\Plugins\Contracts\RichContentPlugin`. It ships **no TipTap extensions** (both extension methods return `[]`) — an affiliate link is just the built-in Link mark with an internal href, so only the two UI hooks are used:
 

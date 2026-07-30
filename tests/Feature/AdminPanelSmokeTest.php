@@ -156,6 +156,20 @@ test('the affiliate link tool renders in rich text and faq answer editors', func
     expect(substr_count($response->getContent(), 'Insert affiliate link'))->toBeGreaterThanOrEqual(2);
 });
 
+test('the heading block labels itself with its text on the edit page', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'h2', 'data' => ['text' => 'DISTINCT_SECTION_HEADING']],
+            ['type' => 'richText', 'data' => ['content' => '<p>Intro</p>']],
+        ],
+    ]);
+
+    // The block header is prefixed so collapsed blocks read as an outline.
+    $this->get(ArticleResource::getUrl('edit', ['record' => $article]))
+        ->assertSuccessful()
+        ->assertSee('H2 — DISTINCT_SECTION_HEADING');
+});
+
 test('image settings page loads', function () {
     $this->get(ImageSettings::getUrl())->assertSuccessful();
 });

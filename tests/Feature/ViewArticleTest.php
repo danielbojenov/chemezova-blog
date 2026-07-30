@@ -53,6 +53,47 @@ test('rich text content is rendered on the view page', function () {
         ->assertSee('UNIQUE_RICH_MARKER');
 });
 
+test('a heading block is rendered as an anchored h2', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'h2', 'data' => ['text' => 'Unique Section Heading']],
+            ['type' => 'richText', 'data' => ['content' => '<p>Body copy.</p>']],
+        ],
+    ]);
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $article]))
+        ->assertSuccessful()
+        ->assertSee('id="unique-section-heading"', escape: false)
+        ->assertSee('Unique Section Heading');
+});
+
+test('repeated heading blocks render unique anchor ids', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'h2', 'data' => ['text' => 'Dosage']],
+            ['type' => 'h2', 'data' => ['text' => 'Dosage']],
+        ],
+    ]);
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $article]))
+        ->assertSuccessful()
+        ->assertSee('id="dosage"', escape: false)
+        ->assertSee('id="dosage-2"', escape: false);
+});
+
+test('a cyrillic heading block renders a transliterated anchor id', function () {
+    $article = Article::factory()->create([
+        'content' => [
+            ['type' => 'h2', 'data' => ['text' => 'Как принимать']],
+        ],
+    ]);
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $article]))
+        ->assertSuccessful()
+        ->assertSee('id="kak-prinimat"', escape: false)
+        ->assertSee('Как принимать');
+});
+
 test('the tldr is rendered above the article content', function () {
     $article = Article::factory()
         ->withTldr('<p>UNIQUE_TLDR_MARKER summary.</p>')

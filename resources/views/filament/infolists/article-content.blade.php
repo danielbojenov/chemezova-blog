@@ -3,6 +3,7 @@
     use App\Enums\ProductCardOverride;
     use App\Filament\Support\ArticleRichContent;
     use App\Models\Product;
+    use App\Support\Articles\ArticleHeadings;
     use App\Support\Products\ArticleProductSyncer;
     use Illuminate\Support\Facades\Storage;
     use Illuminate\Support\Str;
@@ -18,6 +19,10 @@
     // Ranks come from the same helper the syncer uses, so the number printed here
     // always matches the one stored on the article_product pivot. Products are
     // loaded once up front rather than per card.
+    // Anchor ids come from the same helper a table of contents would use, keyed by
+    // block index, so the links and the headings can never drift apart.
+    $headings = ArticleHeadings::extract($blocks);
+
     $ranks = ArticleProductSyncer::ranksFor($getRecord());
     $products = $ranks === []
         ? collect()
@@ -35,6 +40,14 @@
             @endphp
 
             @switch($type)
+                @case('h2')
+                    @if (isset($headings[$loop->index]))
+                        <h2 class="acp-block acp-heading" id="{{ $headings[$loop->index]['id'] }}">
+                            {{ $headings[$loop->index]['text'] }}
+                        </h2>
+                    @endif
+                    @break
+
                 @case('richText')
                     <div class="acp-block acp-richtext">
                         {{ ArticleRichContent::renderer($data['content'] ?? '') }}

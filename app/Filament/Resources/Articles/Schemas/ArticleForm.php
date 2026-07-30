@@ -6,6 +6,7 @@ use App\Enums\ArticleStatus;
 use App\Enums\RankingOrder;
 use App\Filament\Support\ArticleRichEditor;
 use App\Filament\Support\FaqBlock;
+use App\Filament\Support\HeadingBlock;
 use App\Filament\Support\ImageBlock;
 use App\Filament\Support\ProductCardBlock;
 use App\Filament\Support\SlugInput;
@@ -51,6 +52,7 @@ class ArticleForm
                         RichEditor::make('tldr')
                             ->hiddenLabel()
                             ->columnSpanFull()
+                            ->disableToolbarButtons(['h2', 'h3'])
                             ->helperText('Optional short summary shown above the article.'),
                     ]),
                 Section::make('Content')
@@ -65,6 +67,7 @@ class ArticleForm
                         Builder::make('content')
                             // ->hiddenLabel()
                             ->blocks([
+                                HeadingBlock::make(),
                                 Block::make('richText')
                                     ->label('Rich text')
                                     ->icon(Heroicon::Bars3BottomLeft)
