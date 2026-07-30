@@ -5,12 +5,13 @@ namespace App\Filament\Resources\Articles\Schemas;
 use App\Enums\ArticleStatus;
 use App\Enums\RankingOrder;
 use App\Filament\Support\ArticleRichEditor;
+use App\Filament\Support\ContentBuilder;
 use App\Filament\Support\FaqBlock;
+use App\Filament\Support\FeaturedImageSection;
 use App\Filament\Support\HeadingBlock;
 use App\Filament\Support\ImageBlock;
 use App\Filament\Support\ProductCardBlock;
 use App\Filament\Support\SlugInput;
-use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\RichEditor;
@@ -46,6 +47,7 @@ class ArticleForm
                             ->required(fn (Get $get): bool => self::status($get) === ArticleStatus::Scheduled)
                             ->helperText('Leave empty when publishing to use the current time.'),
                     ]),
+                FeaturedImageSection::make(),
                 Section::make('TLDR')
                     ->columnSpanFull()
                     ->schema([
@@ -64,7 +66,7 @@ class ArticleForm
                             ->default(RankingOrder::Descending)
                             ->required()
                             ->helperText('Numbers the product cards below. Descending suits a TOP 10 countdown; ranks always follow card order, so removing a card leaves no gap.'),
-                        Builder::make('content')
+                        ContentBuilder::make('content')
                             // ->hiddenLabel()
                             ->blocks([
                                 HeadingBlock::make(),

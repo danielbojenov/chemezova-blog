@@ -184,3 +184,120 @@ test('deleting an article removes its image directory', function () {
     expect($this->disk->exists("articles/{$article->id}/photo.webp"))->toBeFalse()
         ->and($this->disk->directories('articles'))->not->toContain("articles/{$article->id}");
 });
+
+test('a featured tmp upload is converted into the featured subdirectory', function () {
+    $this->disk->put('articles/tmp/hero-tmpeee555.jpg', fakeJpegImage(1200, 800));
+
+    $article = Article::factory()->create([
+        'featured_image' => 'articles/tmp/hero-tmpeee555.jpg',
+        'featured_image_alt' => 'A hero',
+    ]);
+
+    $converted = $this->processor->process($article);
+
+    $article->refresh();
+
+    expect($converted)->toBeTrue()
+        ->and($article->featured_image)->toBe("articles/{$article->id}/featured/hero.webp")
+        ->and($this->disk->exists("articles/{$article->id}/featured/hero.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/hero-desktop.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/hero-mobile.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/hero-thumbnail.webp"))->toBeTrue()
+        ->and($this->disk->exists('articles/tmp/hero-tmpeee555.jpg'))->toBeFalse();
+});
+
+test('processing is idempotent for an already converted featured image', function () {
+    $this->disk->put('articles/tmp/hero-tmpeee555.jpg', fakeJpegImage(600, 400));
+
+    $article = Article::factory()->create([
+        'featured_image' => 'articles/tmp/hero-tmpeee555.jpg',
+    ]);
+
+    $this->processor->process($article);
+
+    $pathAfterFirstRun = $article->refresh()->featured_image;
+
+    expect($this->processor->process($article))->toBeFalse()
+        ->and($article->refresh()->featured_image)->toBe($pathAfterFirstRun)
+        ->and($this->disk->exists($pathAfterFirstRun))->toBeTrue();
+});
+
+test('replacing the featured image removes the previous variant set', function () {
+    $this->disk->put('articles/tmp/new-hero-tmpfff666.jpg', fakeJpegImage(600, 400));
+
+    $article = Article::factory()->create([
+        'featured_image' => 'articles/tmp/new-hero-tmpfff666.jpg',
+    ]);
+
+    foreach (['old-hero.webp', 'old-hero-desktop.webp', 'old-hero-mobile.webp', 'old-hero-thumbnail.webp'] as $file) {
+        $this->disk->put("articles/{$article->id}/featured/{$file}", 'stale');
+    }
+
+    $this->processor->process($article);
+
+    expect($this->disk->exists("articles/{$article->id}/featured/new-hero.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/old-hero.webp"))->toBeFalse()
+        ->and($this->disk->exists("articles/{$article->id}/featured/old-hero-desktop.webp"))->toBeFalse();
+});
+
+test('clearing the featured image empties the featured subdirectory', function () {
+    $article = Article::factory()->create(['featured_image' => null]);
+
+    foreach (['hero.webp', 'hero-desktop.webp', 'hero-mobile.webp', 'hero-thumbnail.webp'] as $file) {
+        $this->disk->put("articles/{$article->id}/featured/{$file}", 'stale');
+    }
+
+    $this->processor->process($article);
+
+    expect($this->disk->files("articles/{$article->id}/featured"))->toBe([]);
+});
+
+test('content images and the featured image do not clean each other up', function () {
+    $this->disk->put('articles/tmp/photo-tmpaaa111.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('articles/tmp/photo-tmpbbb222.jpg', fakeJpegImage(500, 300));
+
+    $article = Article::factory()->create([
+        'content' => [imageBlock('articles/tmp/photo-tmpaaa111.jpg')],
+        'featured_image' => 'articles/tmp/photo-tmpbbb222.jpg',
+    ]);
+
+    $converted = $this->processor->process($article);
+
+    $article->refresh();
+
+    // Separate directories, so the shared base name needs no numeric suffix and
+    // neither cleanup pass can see — let alone delete — the other's files.
+    expect($converted)->toBeTrue()
+        ->and($article->content[0]['data']['image'])->toBe("articles/{$article->id}/photo.webp")
+        ->and($article->featured_image)->toBe("articles/{$article->id}/featured/photo.webp")
+        ->and($this->disk->exists("articles/{$article->id}/photo.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/photo-thumbnail.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/photo.webp"))->toBeTrue()
+        ->and($this->disk->exists("articles/{$article->id}/featured/photo-thumbnail.webp"))->toBeTrue();
+});
+
+test('a corrupt featured upload is left untouched and does not break processing', function () {
+    $this->disk->put('articles/tmp/bad-tmpggg777.jpg', 'not-an-image');
+
+    $article = Article::factory()->create([
+        'featured_image' => 'articles/tmp/bad-tmpggg777.jpg',
+    ]);
+
+    $converted = $this->processor->process($article);
+
+    $article->refresh();
+
+    expect($converted)->toBeFalse()
+        ->and($article->featured_image)->toBe('articles/tmp/bad-tmpggg777.jpg')
+        ->and($this->disk->exists('articles/tmp/bad-tmpggg777.jpg'))->toBeTrue();
+});
+
+test('deleting an article removes its featured image directory', function () {
+    $article = Article::factory()->create();
+
+    $this->disk->put("articles/{$article->id}/featured/hero.webp", 'image');
+
+    $article->delete();
+
+    expect($this->disk->exists("articles/{$article->id}/featured/hero.webp"))->toBeFalse();
+});

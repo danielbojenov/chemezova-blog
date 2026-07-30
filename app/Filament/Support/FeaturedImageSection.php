@@ -4,29 +4,31 @@ namespace App\Filament\Support;
 
 use App\Support\Images\ArticleImageProcessor;
 use App\Support\Images\TmpUploadName;
-use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
-use Filament\Support\Icons\Heroicon;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
-class ImageBlock
+class FeaturedImageSection
 {
     /**
-     * An article content block with an image upload (converted to WebP variants on save),
-     * required alt text, and an optional caption.
+     * The article's single lead image, uploaded exactly like a content image block
+     * but stored in its own column so the public site can select it in SQL rather
+     * than parsing the content JSON.
+     *
+     * Uploads stage in the shared `articles/tmp` directory; ArticleImageProcessor
+     * moves them into `articles/{id}/featured/` on save.
      */
-    public static function make(): Block
+    public static function make(): Section
     {
-        return Block::make('image')
-            ->label('Image')
-            ->icon(Heroicon::Photo)
+        return Section::make('Featured image')
+            ->columnSpanFull()
             ->schema([
-                FileUpload::make('image')
+                FileUpload::make('featured_image')
                     ->hiddenLabel()
                     ->image()
                     ->imageEditor()
-                    ->required()
                     ->disk(ArticleImageProcessor::DISK)
                     ->directory(ArticleImageProcessor::TMP_DIRECTORY)
                     ->visibility('public')
@@ -34,11 +36,11 @@ class ImageBlock
                     ->getUploadedFileNameForStorageUsing(
                         fn (TemporaryUploadedFile $file): string => TmpUploadName::for($file),
                     ),
-                TextInput::make('alt')
+                TextInput::make('featured_image_alt')
                     ->label('Alt text')
-                    ->required()
+                    ->required(fn (Get $get): bool => filled($get('featured_image')))
                     ->maxLength(255),
-                TextInput::make('caption')
+                TextInput::make('featured_image_caption')
                     ->label('Caption')
                     ->maxLength(500),
             ]);

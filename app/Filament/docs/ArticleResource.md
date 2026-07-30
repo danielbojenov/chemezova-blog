@@ -27,6 +27,8 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Reusable heading block | `app/Filament/Support/HeadingBlock.php` |
 | Heading/anchor extraction | `app/Support/Articles/ArticleHeadings.php` |
 | Reusable image block | `app/Filament/Support/ImageBlock.php` |
+| Featured image section | `app/Filament/Support/FeaturedImageSection.php` |
+| Shared tmp upload naming | `app/Support/Images/TmpUploadName.php` |
 | Reusable FAQ block | `app/Filament/Support/FaqBlock.php` |
 | Reusable product card block | `app/Filament/Support/ProductCardBlock.php` |
 | Product ranking syncer | `app/Support/Products/ArticleProductSyncer.php` |
@@ -39,7 +41,7 @@ Filament v5 resource for managing blog articles. Follows the "resource directory
 | Configurable image sizes | `app/Support/Images/ImageSizeSettings.php` |
 | Ranking direction enum | `app/Enums/RankingOrder.php` |
 | Card override mode enum | `app/Enums/ProductCardOverride.php` |
-| Schema migrations | `database/migrations/2026_07_17_153849_create_articles_table.php`, `database/migrations/2026_07_29_133726_add_tldr_to_articles_table.php`, `database/migrations/2026_07_29_145358_add_ranking_order_to_articles_table.php`, `database/migrations/2026_07_29_145356_create_article_product_table.php` |
+| Schema migrations | `database/migrations/2026_07_17_153849_create_articles_table.php`, `database/migrations/2026_07_29_133726_add_tldr_to_articles_table.php`, `database/migrations/2026_07_29_145358_add_ranking_order_to_articles_table.php`, `database/migrations/2026_07_29_145356_create_article_product_table.php`, `database/migrations/2026_07_30_143606_add_featured_image_to_articles_table.php` |
 
 There are **no RelationManagers**. The `categories`/`tags` many-to-many relations are managed inline on the article form via relationship `Select` fields with `createOptionForm()`, rather than dedicated RelationManager pages.
 
@@ -74,7 +76,7 @@ Four routes. The `view` route is a read-only, reader-facing preview of the artic
 
 ## Form schema (`ArticleForm`)
 
-Five `Section`s, each `->columnSpanFull()`.
+Six `Section`s, each `->columnSpanFull()`.
 
 ### Section "Article" (2 columns)
 
@@ -106,6 +108,20 @@ private static function status(Get $get): ?ArticleStatus
 This exists because Filament form state for a `status` field can hold either the backing string (`'draft'`) or an `ArticleStatus` enum instance depending on where the value came from (initial load vs. live update), so every comparison normalizes first. The same normalization is duplicated in `ArticleResource::fillPublishedAt()` (see below) since it operates on raw submitted `$data` rather than a `Get` closure.
 
 `published_at` is visible for Published/Scheduled, and only *required* for Scheduled — a Published article can be saved with the field empty because the save-time hook defaults it to `now()`.
+
+### Section "Featured image"
+
+Contributed whole by [`FeaturedImageSection::make()`](#featuredimagesectionmake) — the article's single lead image, plus its alt text and caption.
+
+```php
+FeaturedImageSection::make(),
+```
+
+Three deliberate choices:
+
+- **It is a section, not a `content` block type.** Same argument as the TLDR below: there is exactly zero or one featured image per article and it never belongs in the middle of the body, so a block — which editors could add twice or reorder into the body — would be the wrong shape. Storing it in a column also lets the public site select the hero/card image in SQL instead of parsing the block JSON, which is what a list of article cards actually needs.
+- **The image is optional, the alt text is conditionally required.** Nothing forces an article to have a featured image, so existing articles and drafts save unchanged. But an image with no alt text is an accessibility hole, so `featured_image_alt` is `->required(fn (Get $get): bool => filled($get('featured_image')))` — the same `Get`-closure pattern `published_at` uses against `status`. Note the interaction with `BaseFileUpload::hydrateFiles()`, which drops hydrated paths whose file is missing from the disk: if the stored file disappears, the form loads with an empty upload and the alt requirement relaxes accordingly.
+- **Its files live in their own subdirectory.** Everything else about the upload matches the content `ImageBlock`, but conversion targets `articles/{id}/featured/` — see [Image pipeline](#image-pipeline) for why that separation is load-bearing rather than cosmetic.
 
 ### Section "TLDR"
 
@@ -223,9 +239,30 @@ Note: `excerpt` is a fillable, DB-backed column (see [Model](#model-article)) bu
 
 The `view` page (`ViewArticle` extends `ViewRecord`) renders a read-only, reader-facing preview of the article instead of the form. `ViewArticle` delegates to `ArticleInfolist::configure()` from its `infolist()` method — the same thin-coordinator split used for the form. It also declares `getHeaderActions(): [EditAction::make()]` explicitly.
 
-Five `Section`s parallel the form: **Article** (title as a large bold `TextEntry`, `status` badge via the enum, `published_at` dateTime), **Taxonomy** (`categories.name`/`tags.name` badges), **TLDR** (the summary, below), **Content** (the block preview, below), and **SEO** (collapsed `meta_title`/`meta_description`). Entries use a `->placeholder('—')` for empty values.
+Six `Section`s parallel the form: **Article** (title as a large bold `TextEntry`, `status` badge via the enum, `published_at` dateTime), **Featured image** (below), **Taxonomy** (`categories.name`/`tags.name` badges), **TLDR** (the summary, below), **Content** (the block preview, below), and **SEO** (collapsed `meta_title`/`meta_description`). Entries use a `->placeholder('—')` for empty values.
 
 Note that the infolist order differs from the form: **Taxonomy sits before TLDR/Content here**, so the reading preview keeps the two long-form blocks adjacent at the bottom of the page.
+
+### Rendering the featured image
+
+```php
+ImageEntry::make('featured_image')
+    ->hiddenLabel()
+    ->disk('public')
+    ->getStateUsing(fn (Article $record): ?string => filled($record->featured_image)
+        ? ImageVariant::Mobile->pathFor($record->featured_image)
+        : null)
+    ->placeholder('—'),
+TextEntry::make('featured_image_alt')->label('Alt text')->placeholder('—'),
+TextEntry::make('featured_image_caption')->label('Caption')->placeholder('—'),
+```
+
+A stock `ImageEntry` — unlike the Builder, a single image column needs no custom entry. Two things to know:
+
+- **It previews the `-mobile` variant, not the stored Original.** Same reasoning as the content block preview: the Original can be 2560px wide.
+- **Computed state uses `->getStateUsing()`, not `->state()`.** On a schema component `state()` *writes* into the Livewire state path; the read-side "compute this entry's value" hook is `getStateUsing()`. (Table columns are the opposite — `Column::state()` there is an alias of `getStateUsing()`, which is why `ArticlesTable` below uses it.)
+
+`ImageEntry` (and `ImageColumn`) resolve **no URL at all for a path that is missing from the disk** — they call `$storage->exists()` first and fall back to the placeholder. The custom content-block Blade view does not do this check, which is why a content image renders its `<img>` from a bare path but a featured image does not. Tests asserting on rendered image URLs must therefore put a real file on the faked disk.
 
 ### Rendering the `tldr` summary
 
@@ -261,7 +298,7 @@ The Blade view iterates `$getState()` and renders each block type as it will app
 
 - `h2` — an `<h2>` carrying an anchor id, so section links work. Ids come from `App\Support\Articles\ArticleHeadings::extract()`, which walks the content array, slugs each heading's text (`Str::slug()`, falling back to `section` when a heading is all punctuation or emoji and slugs to nothing), and suffixes repeats `-2`, `-3`, … so ids stay unique. It returns the headings keyed by block position, which is both what the view looks up while iterating and what a frontend table of contents wants via `array_values()` — one helper means the TOC's links and the rendered anchors cannot drift apart. Because the heading introduces the block below it, the CSS drops the usual inter-block separator and top padding immediately after `.acp-heading`.
 - `richText` and `faq` answers — rendered through `ArticleRichContent::renderer($html)`, a thin wrapper around `Filament\Forms\Components\RichEditor\RichContentRenderer` that outputs (and sanitizes) the stored RichEditor HTML and centrally injects `rel="sponsored nofollow"` on every affiliate `/go/` link (the `rel` attribute is never stored in content — see [AffiliateLinkResource.md](AffiliateLinkResource.md#central-relsponsored-nofollow-at-render-time)).
-- `image` — a `<figure>` whose `src` is the **`-mobile` variant** derived from the stored Original path (`Str::replaceLast('.webp', ImageVariant::Mobile->fileSuffix().'.webp', $path)`), served via `Storage::disk('public')->url()`, plus alt text and an optional `<figcaption>`.
+- `image` — a `<figure>` whose `src` is the **`-mobile` variant** derived from the stored Original path (`ImageVariant::Mobile->pathFor($path)`), served via `Storage::disk('public')->url()`, plus alt text and an optional `<figcaption>`.
 - `faq` — a standout heading followed by a `<details>`/`<summary>` accordion per question/answer pair.
 - `productCard` — a rank badge, the product's `-mobile` image, name, brand, a facts list (rating, pack price, per-dose price, doses, form, composition, primary ingredient), ingredient pills, the description, and buy buttons pointing at `/go/{slug}`. Ranks come from `ArticleProductSyncer::ranksFor()`, the same helper the syncer uses. Products are loaded once up front with `Product::with(['brand', 'affiliateLinks'])->findMany(...)` so a ten-card ranking does not N+1, and a card whose product has been deleted is skipped entirely rather than half-rendered.
 
@@ -275,7 +312,18 @@ That stylesheet lives in its own partial, `resources/views/filament/infolists/ar
 
 ## Table (`ArticlesTable`)
 
-Columns: `id` (sortable), `title` (searchable, sortable, `->url()` linking to the **edit** page — the row title goes to Edit, while the read-only View page is reached only via the `ViewAction`), `slug` (searchable, hidden-by-default toggle), `status` (badge, colored/labeled via the `ArticleStatus` enum), `published_at` (dateTime, sortable), `categories.name` (badge, relationship column), `tags.name` (badge, hidden-by-default toggle), `created_at`/`updated_at` (dateTime, sortable, hidden-by-default toggle).
+Columns: `featured_image` (leading `ImageColumn`, label-less, below), `id` (sortable), `title` (searchable, sortable, `->url()` linking to the **edit** page — the row title goes to Edit, while the read-only View page is reached only via the `ViewAction`), `slug` (searchable, hidden-by-default toggle), `status` (badge, colored/labeled via the `ArticleStatus` enum), `published_at` (dateTime, sortable), `categories.name` (badge, relationship column), `tags.name` (badge, hidden-by-default toggle), `created_at`/`updated_at` (dateTime, sortable, hidden-by-default toggle).
+
+```php
+ImageColumn::make('featured_image')
+    ->label('')
+    ->disk('public')
+    ->state(fn (Article $record): ?string => filled($record->featured_image)
+        ? ImageVariant::Thumbnail->pathFor($record->featured_image)
+        : null),
+```
+
+Leads the row, label-less, mirroring `ProductsTable`'s image column. It renders the **`-thumbnail`** variant so a 50-row page does not pull 50 full-size Originals — the reason `ImageVariant::pathFor()` exists as a shared helper rather than an inline expression.
 
 `->defaultSort('created_at', 'desc')`.
 
@@ -330,8 +378,46 @@ public static function make(): Block
             TextInput::make('caption')->label('Caption')->maxLength(500),
         ]);
 }
+```
 
-private static function storageFileName(TemporaryUploadedFile $file): string
+All uploads initially land in `articles/tmp/` rather than the final `articles/{id}/` directory — a new article doesn't have an ID yet at form-fill time, and existing articles shouldn't get half-processed images before the record actually saves.
+
+### `FeaturedImageSection::make()`
+
+```php
+public static function make(): Section
+{
+    return Section::make('Featured image')
+        ->columnSpanFull()
+        ->schema([
+            FileUpload::make('featured_image')
+                ->hiddenLabel()->image()->imageEditor()
+                ->disk(ArticleImageProcessor::DISK)               // 'public'
+                ->directory(ArticleImageProcessor::TMP_DIRECTORY) // 'articles/tmp'
+                ->visibility('public')
+                ->maxSize(10240)
+                ->getUploadedFileNameForStorageUsing(
+                    fn (TemporaryUploadedFile $file): string => TmpUploadName::for($file),
+                ),
+            TextInput::make('featured_image_alt')
+                ->label('Alt text')
+                ->required(fn (Get $get): bool => filled($get('featured_image')))
+                ->maxLength(255),
+            TextInput::make('featured_image_caption')
+                ->label('Caption')
+                ->maxLength(500),
+        ]);
+}
+```
+
+The article's lead image. Every `FileUpload` option is identical to `ImageBlock`'s except `->required()`, which is dropped — a featured image is optional. It returns a whole `Section` rather than a field or a `Block`, which is why `ArticleForm` composes it as a bare `FeaturedImageSection::make(),` alongside its inline sections.
+
+Note it **shares `articles/tmp/` with the content blocks** rather than staging in a directory of its own. The processor distinguishes the two by which attribute it read the path from, never by the tmp path, so a second staging directory would buy nothing. The directories only diverge at conversion time, where it matters.
+
+### `TmpUploadName::for(TemporaryUploadedFile $file)`
+
+```php
+public static function for(TemporaryUploadedFile $file): string
 {
     $baseName = Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
 
@@ -341,7 +427,9 @@ private static function storageFileName(TemporaryUploadedFile $file): string
 }
 ```
 
-All uploads initially land in `articles/tmp/` rather than the final `articles/{id}/` directory — a new article doesn't have an ID yet at form-fill time, and existing articles shouldn't get half-processed images before the record actually saves. The stored filename is the slugified original name plus a random `-tmp{6 chars}` suffix, with the extension always derived server-side from `$file->extension()` (never trusted from the client).
+The stored name for any staged upload: the slugified original name plus a random `-tmp{6 chars}` marker, with the extension always derived server-side from `$file->extension()` (never trusted from the client). The marker is what `ArticleImageProcessor::TMP_SUFFIX_PATTERN` matches to strip, so both article uploads that need to survive that round trip — the content blocks and the featured image — must produce it the same way. Shared by `ImageBlock` and `FeaturedImageSection`.
+
+`ProductForm` still carries its own private copy of this logic (see [ProductResource.md](ProductResource.md)); folding it into this helper is a pending cleanup, not a deliberate split.
 
 ### `FaqBlock::make()`
 
@@ -356,7 +444,7 @@ public static function make(): Block
                 ->hiddenLabel()
                 ->schema([
                     TextInput::make('question')->required()->maxLength(500)->live(onBlur: true),
-                    ArticleRichEditor::make('answer')->required(),
+                    ArticleRichEditor::withoutHeadings('answer')->required(),
                 ])
                 ->required()->minItems(1)
                 ->collapsible()
@@ -466,22 +554,28 @@ Both hooks run the two syncers after the image processor, so they scan the final
 
 `ArticleProductSyncer` then syncs `article_product`, assigning each card the rank implied by its position and the article's `ranking_order`.
 
-`getRedirectUrl()` is overridden to force a full page remount after image processing. `ArticleImageProcessor` rewrites `content`'s image paths from `articles/tmp/...` to `articles/{id}/...` *after* the form has already submitted; Livewire's normal in-place state refill doesn't pick up that rewritten path for the FilePond preview, so the edit page redirects to itself to force a clean reload with the new path.
+`getRedirectUrl()` is overridden to force a full page remount after image processing. `ArticleImageProcessor` rewrites the stored image paths from `articles/tmp/...` to `articles/{id}/...` *after* the form has already submitted; Livewire's normal in-place state refill doesn't pick up that rewritten path for the FilePond preview, so the edit page redirects to itself to force a clean reload with the new path.
+
+Neither page needed a change when the featured image was added: `process()` already returns a single "did anything get rewritten" boolean, so a featured-image conversion triggers the same remount as a content block conversion.
 
 ## Image pipeline
 
 The article image workflow is a two-phase, deferred process: the `FileUpload` component only ever stages files; the actual move, resize, and cleanup happens afterward in `afterCreate`/`afterSave`.
 
-1. **Upload** — `ImageBlock`'s `FileUpload` stores the raw file at `articles/tmp/{slug}-tmp{random6}.{ext}` on the `public` disk.
+An article has **two independent sources of images** — the `image` blocks inside its content Builder, and the single featured image column. They stage in the same tmp directory and are converted by the same processor, but land in different directories.
 
-2. **`ArticleImageProcessor::process(Article $article)`** — called from both `afterCreate` and `afterSave`:
-   - Iterates every block in `$article->content`.
-   - For each `image` block whose path starts with `articles/tmp/`, derives a unique base filename (strips the `-tmp{6}` suffix via `TMP_SUFFIX_PATTERN`, de-duplicated against existing files in `articles/{id}/` via `uniqueBaseName()`).
-   - Calls `ImageConverter::convert()` to generate WebP variants into `articles/{article->id}/`.
-   - Deletes the original tmp upload and rewrites `content[$index]['data']['image']` to the new **Original** variant path.
-   - On conversion failure, logs a warning and leaves the tmp upload untouched (non-fatal, block skipped).
-   - If any block changed, persists via `$article->updateQuietly(['content' => $content])` — quiet to avoid re-triggering model events (and re-entrant processing).
-   - Always finishes with `cleanupOrphans($article)`, which deletes any file in `articles/{id}/` whose base name is no longer referenced by any image block — handles images removed or replaced in the Builder.
+1. **Upload** — `ImageBlock`'s and `FeaturedImageSection`'s `FileUpload`s both store the raw file at `articles/tmp/{slug}-tmp{random6}.{ext}` on the `public` disk, named by `TmpUploadName::for()`.
+
+2. **`ArticleImageProcessor::process(Article $article)`** — called from both `afterCreate` and `afterSave`. It runs two conversion passes and returns whether *either* changed anything:
+   - `convertContentBlocks()` iterates every block in `$article->content` and converts each `image` block still pointing at `articles/tmp/`, into **`articles/{id}/`**.
+   - `convertFeaturedImage()` does the same for `$article->featured_image`, into **`articles/{id}/featured/`**.
+   - Both funnel into one private `convert()`: derive a unique base filename (strip the `-tmp{6}` suffix via `TMP_SUFFIX_PATTERN`, de-duplicate against the target directory via `uniqueBaseName()`), call `ImageConverter::convert()`, delete the tmp upload, and return the new **Original** variant path. On failure it logs a warning, returns `null`, and leaves the tmp upload untouched — non-fatal, that one image is skipped.
+   - Whatever changed is written in a **single** `$article->updateQuietly([...])` carrying `content` and/or `featured_image` — quiet to avoid re-triggering model events (and with them, re-entrant processing). `updateQuietly()` also refreshes the in-memory attributes, which is what lets the cleanup below read the rewritten paths.
+   - Always finishes with `cleanupOrphans($article)`.
+
+   **`cleanupOrphans()` makes two passes**, one per directory, each deleting every file whose base name is no longer referenced — handling images removed or replaced in the Builder, and superseded featured images.
+
+   This is exactly why the featured image gets its own subdirectory. Each pass enforces a blunt rule ("delete everything here that nothing references"), which is only safe because the passes cannot see each other's files: `Storage::files()` is **not recursive**, so the content pass never lists anything inside `featured/`, and the featured pass lists only that subdirectory. Flat storage would have made every featured image an orphan by the content pass's reckoning, and vice versa. It also removes any chance of a `uniqueBaseName()` collision between a featured image and a content image uploaded under the same filename — both keep the clean name in their own folder, with no `-1` suffix.
 
 3. **`ImageConverter::convert()`** — intervention/image v4 usage:
 
@@ -524,10 +618,16 @@ The article image workflow is a two-phase, deferred process: the `FileUpload` co
    });
    ```
 
+   `deleteDirectory()` *is* recursive, so this needed no change when `featured/` was added — the featured variants go with the rest.
+
 ## Model (`Article`)
 
 ```php
-#[Fillable(['title', 'slug', 'excerpt', 'tldr', 'content', 'status', 'published_at', 'ranking_order', 'meta_title', 'meta_description'])]
+#[Fillable([
+    'title', 'slug', 'excerpt', 'tldr', 'content',
+    'featured_image', 'featured_image_alt', 'featured_image_caption',
+    'status', 'published_at', 'ranking_order', 'meta_title', 'meta_description',
+])]
 class Article extends Model
 {
     use HasFactory;
@@ -549,7 +649,7 @@ class Article extends Model
 }
 ```
 
-Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `tldr` is deliberately **uncast** — it holds the RichEditor's raw HTML string. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`). `affiliateLinks` (pivot `affiliate_link_article`) and `products` (pivot `article_product`) are not edited directly — both are derived from content by their syncers on every save.
+Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $fillable` property. `content` is cast to `array` (backs the Builder JSON); `status` is cast to the `ArticleStatus` backed enum. `tldr` is deliberately **uncast** — it holds the RichEditor's raw HTML string. The three `featured_image*` columns are plain uncast strings: a stored path plus its alt text and caption. `categories`/`tags` are standard `belongsToMany` pivots (`article_category`, `article_tag`). `affiliateLinks` (pivot `affiliate_link_article`) and `products` (pivot `article_product`) are not edited directly — both are derived from content by their syncers on every save.
 
 ## Enums
 
@@ -561,7 +661,21 @@ Uses PHP 8 attribute-based `#[Fillable(...)]` rather than a classic `protected $
 | `Published` | Published | success |
 | `Scheduled` | Scheduled | warning |
 
-**`ImageVariant`** (`original` / `desktop` / `mobile` / `thumbnail`) exposes `fileSuffix()`, used throughout the image pipeline for consistent variant filenames.
+**`ImageVariant`** (`original` / `desktop` / `mobile` / `thumbnail`) exposes two methods:
+
+- `fileSuffix()` (`''`, `-desktop`, `-mobile`, `-thumbnail`) — used throughout the image pipeline for consistent variant filenames.
+- `pathFor(string $path)` — rewrites a stored path to point at this variant:
+
+  ```php
+  public function pathFor(string $path): string
+  {
+      return str_ends_with($path, '.webp')
+          ? Str::replaceLast('.webp', $this->fileSuffix().'.webp', $path)
+          : $path;
+  }
+  ```
+
+  It **expects the Original path as stored on the record**, with no variant suffix — handing it an already-suffixed path would produce `-mobile-thumbnail`. Anything that is not a converted `.webp` (an upload still sitting in a tmp directory) is returned untouched. Every read-side surface that wants a smaller image goes through it: the articles table thumbnail, the featured image entry, the content block preview, and the product card preview.
 
 **`RankingOrder`** (`ascending` / `descending`) implements `HasLabel` and carries the ranking rule itself:
 
@@ -592,6 +706,9 @@ $table->string('slug')->unique();
 $table->text('excerpt')->nullable();      // fillable, not on the form
 $table->text('tldr')->nullable();         // added by add_tldr_to_articles_table; RichEditor HTML, uncast
 $table->json('content')->nullable();
+$table->string('featured_image')->nullable();             // added by add_featured_image_to_articles_table
+$table->string('featured_image_alt')->nullable();
+$table->string('featured_image_caption', 500)->nullable();
 $table->string('status')->default('draft')->index();
 $table->timestamp('published_at')->nullable();
 $table->string('ranking_order')->default('descending');  // added by add_ranking_order_to_articles_table
@@ -600,7 +717,9 @@ $table->text('meta_description')->nullable();
 $table->timestamps();
 ```
 
-`tldr` arrived later, in `2026_07_29_133726_add_tldr_to_articles_table.php` — a plain `Schema::table()` add/drop pair. The DB is PostgreSQL, so no `->after()` column positioning (that modifier is MySQL-only and is ignored here).
+`tldr` arrived later, in `2026_07_29_133726_add_tldr_to_articles_table.php`, and the three `featured_image*` columns later still, in `2026_07_30_143606_add_featured_image_to_articles_table.php` — both plain `Schema::table()` add/drop pairs. The DB is PostgreSQL, so no `->after()` column positioning (that modifier is MySQL-only and is ignored here).
+
+All three featured columns are nullable: the image is optional, so nothing forces existing articles or drafts to acquire one. `featured_image_caption` is capped at 500 to match the content image block's caption; the other two take the default 255. The featured path is a **column rather than a content block** so a list of article cards can select the hero image in SQL — the same argument that made `tldr` a column.
 
 Plus pivot tables `article_category` and `article_tag` backing the `categories`/`tags` many-to-many relations, and `affiliate_link_article` / `article_product` backing the content-derived `affiliateLinks` and `products` relations. `article_product` carries an extra `unsignedSmallInteger('rank')->nullable()` — stored even though it is derived, so a ranking can be queried in SQL rather than by parsing content JSON.
 
@@ -614,6 +733,8 @@ Plus pivot tables `article_category` and `article_tag` backing the `categories`/
 - `->suffixAction()` for inline generate-from-another-field UX.
 - `->createOptionForm()` on relationship `Select`s instead of RelationManagers for lightweight inline taxonomy creation.
 - Deferred two-phase image processing: uploads stage in a tmp directory; a page lifecycle hook (`afterCreate`/`afterSave`) performs the real move, variant generation, and content rewrite.
+- A dedicated single-image column (the featured image) living alongside a `Builder` that also carries images, sharing one processor and one tmp directory but converting into a separate subdirectory so each source's orphan cleanup stays independent.
+- A `Section`-returning static factory (`FeaturedImageSection`) composed directly into a schema's `components()`, extending the block/field factory convention up a level to whole layout components.
 - Custom `getRedirectUrl()` override to force a full remount after server-side mutation of upload-derived state.
 - `updateQuietly()` to persist processed content without re-firing model events.
 - Rich editor extension via the supported plugin API (`RichContentPlugin` + `RichEditorTool` + modal `Action` + `EditorCommand`) for affiliate link insertion — no custom TipTap extensions (see [AffiliateLinkResource.md](AffiliateLinkResource.md)).

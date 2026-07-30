@@ -65,6 +65,23 @@ class ArticleFactory extends Factory
     }
 
     /**
+     * A featured image already through the pipeline, living in the article's own
+     * `featured/` subdirectory. The file itself is not created — states that need
+     * it on disk should put it there themselves.
+     */
+    public function withFeaturedImage(string $baseName = 'featured-photo'): static
+    {
+        return $this
+            ->state(fn (array $attributes): array => [
+                'featured_image_alt' => fake()->sentence(4),
+                'featured_image_caption' => fake()->sentence(8),
+            ])
+            ->afterCreating(fn (Article $article) => $article->updateQuietly([
+                'featured_image' => "articles/{$article->id}/featured/{$baseName}.webp",
+            ]));
+    }
+
+    /**
      * The `tldr` column is null by default, matching the optional field.
      */
     public function withTldr(?string $html = null): static

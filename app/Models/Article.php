@@ -14,7 +14,21 @@ use Illuminate\Support\Facades\Storage;
 /**
  * @mixin IdeHelperArticle
  */
-#[Fillable(['title', 'slug', 'excerpt', 'tldr', 'content', 'status', 'published_at', 'ranking_order', 'meta_title', 'meta_description'])]
+#[Fillable([
+    'title',
+    'slug',
+    'excerpt',
+    'tldr',
+    'content',
+    'featured_image',
+    'featured_image_alt',
+    'featured_image_caption',
+    'status',
+    'published_at',
+    'ranking_order',
+    'meta_title',
+    'meta_description',
+])]
 class Article extends Model
 {
     /** @use HasFactory<ArticleFactory> */

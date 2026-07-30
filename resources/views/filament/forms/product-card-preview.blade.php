@@ -2,13 +2,12 @@
     use App\Enums\ImageVariant;
     use App\Filament\Resources\Products\ProductResource;
     use Illuminate\Support\Facades\Storage;
-    use Illuminate\Support\Str;
 
     // The stored path is the Original (suffix-less) variant; the small -thumbnail
     // sibling is enough for an at-a-glance preview while reordering blocks.
-    $thumbnail = $product?->image !== null && str_ends_with($product->image, '.webp')
-        ? Str::replaceLast('.webp', ImageVariant::Thumbnail->fileSuffix() . '.webp', $product->image)
-        : $product?->image;
+    $thumbnail = $product?->image === null
+        ? null
+        : ImageVariant::Thumbnail->pathFor($product->image);
 
     // Opened in a new tab so an unsaved article is never navigated away from.
     $editUrl = $product === null

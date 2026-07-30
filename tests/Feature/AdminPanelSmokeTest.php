@@ -48,6 +48,14 @@ test('article edit page loads with image and faq blocks in the content', functio
     $this->get(ArticleResource::getUrl('edit', ['record' => $article]))->assertSuccessful();
 });
 
+test('article pages load with a featured image set', function () {
+    $article = Article::factory()->withFeaturedImage()->create();
+
+    $this->get(ArticleResource::getUrl('index'))->assertSuccessful();
+    $this->get(ArticleResource::getUrl('view', ['record' => $article]))->assertSuccessful();
+    $this->get(ArticleResource::getUrl('edit', ['record' => $article]))->assertSuccessful();
+});
+
 test('the article edit page loads with a product card block in the content', function () {
     $product = Product::factory()->create(['name' => 'DISTINCT_CARD_PRODUCT']);
     $article = Article::factory()->create([

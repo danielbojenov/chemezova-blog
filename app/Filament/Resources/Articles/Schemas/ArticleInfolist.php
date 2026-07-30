@@ -2,8 +2,11 @@
 
 namespace App\Filament\Resources\Articles\Schemas;
 
+use App\Enums\ImageVariant;
 use App\Filament\Support\ArticleContentEntry;
 use App\Filament\Support\ArticleTldrEntry;
+use App\Models\Article;
+use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -28,6 +31,25 @@ class ArticleInfolist
                             ->badge(),
                         TextEntry::make('published_at')
                             ->dateTime()
+                            ->placeholder('—'),
+                    ]),
+                Section::make('Featured image')
+                    ->columnSpanFull()
+                    ->schema([
+                        ImageEntry::make('featured_image')
+                            ->hiddenLabel()
+                            ->disk('public')
+                            // Preview the -mobile sibling rather than the full-size
+                            // Original, matching the content block preview.
+                            ->getStateUsing(fn (Article $record): ?string => filled($record->featured_image)
+                                ? ImageVariant::Mobile->pathFor($record->featured_image)
+                                : null)
+                            ->placeholder('—'),
+                        TextEntry::make('featured_image_alt')
+                            ->label('Alt text')
+                            ->placeholder('—'),
+                        TextEntry::make('featured_image_caption')
+                            ->label('Caption')
                             ->placeholder('—'),
                     ]),
                 Section::make('Taxonomy')

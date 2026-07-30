@@ -15,6 +15,7 @@ use App\Models\Product;
 use App\Models\Tag;
 use App\Models\User;
 use App\Support\Products\ArticleProductSyncer;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -133,6 +134,81 @@ test('the tldr is saved from the edit form', function () {
         ->assertHasNoFormErrors();
 
     expect($article->refresh()->tldr)->toContain('SAVED_TLDR_MARKER');
+});
+
+test('the featured image alt and caption are saved from the edit form', function () {
+    $article = Article::factory()->create();
+
+    Livewire::test(EditArticle::class, ['record' => $article->id])
+        ->fillForm([
+            'featured_image_alt' => 'SAVED_FEATURED_ALT',
+            'featured_image_caption' => 'SAVED_FEATURED_CAPTION',
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $article->refresh();
+
+    expect($article->featured_image_alt)->toBe('SAVED_FEATURED_ALT')
+        ->and($article->featured_image_caption)->toBe('SAVED_FEATURED_CAPTION');
+});
+
+test('an article with no featured image saves without errors', function () {
+    $article = Article::factory()->create();
+
+    Livewire::test(EditArticle::class, ['record' => $article->id])
+        ->fillForm(['title' => 'Still Saveable Without A Featured Image'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($article->refresh()->featured_image)->toBeNull();
+});
+
+test('featured image alt text is required once an image is present', function () {
+    Storage::fake('public');
+
+    $article = Article::factory()->withFeaturedImage()->create();
+
+    // FileUpload drops hydrated paths that are missing from the disk, which would
+    // leave the form with no image and so no alt requirement to assert against.
+    Storage::disk('public')->put($article->featured_image, 'image');
+
+    Livewire::test(EditArticle::class, ['record' => $article->id])
+        ->fillForm(['featured_image_alt' => null])
+        ->call('save')
+        ->assertHasFormErrors(['featured_image_alt' => 'required']);
+});
+
+test('the featured image is rendered on the view page', function () {
+    Storage::fake('public');
+
+    $article = Article::factory()->create([
+        'featured_image' => 'articles/1/featured/hero.webp',
+        'featured_image_alt' => 'DISTINCT_FEATURED_ALT',
+        'featured_image_caption' => 'DISTINCT_FEATURED_CAPTION',
+    ]);
+
+    // ImageEntry resolves no URL for a path that is not on the disk.
+    Storage::disk('public')->put('articles/1/featured/hero-mobile.webp', 'image');
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $article]))
+        ->assertSuccessful()
+        ->assertSee('Featured image')
+        ->assertSee('hero-mobile.webp')
+        ->assertSee('DISTINCT_FEATURED_ALT')
+        ->assertSee('DISTINCT_FEATURED_CAPTION');
+});
+
+test('the articles table shows the featured image thumbnail', function () {
+    Storage::fake('public');
+
+    $article = Article::factory()->withFeaturedImage('listed-hero')->create();
+
+    Storage::disk('public')->put("articles/{$article->id}/featured/listed-hero-thumbnail.webp", 'image');
+
+    $this->get(ArticleResource::getUrl('index'))
+        ->assertSuccessful()
+        ->assertSee("articles/{$article->id}/featured/listed-hero-thumbnail.webp");
 });
 
 test('image and faq blocks are rendered on the view page', function () {
