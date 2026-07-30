@@ -3,6 +3,7 @@
 use App\Enums\ProductComposition;
 use App\Enums\SupplementForm;
 use App\Filament\Pages\ImageSettings;
+use App\Filament\Pages\SiteSettings;
 use App\Filament\Resources\Articles\ArticleResource;
 use App\Filament\Resources\Brands\BrandResource;
 use App\Filament\Resources\Categories\CategoryResource;
@@ -172,6 +173,10 @@ test('the heading block labels itself with its text on the edit page', function 
 
 test('image settings page loads', function () {
     $this->get(ImageSettings::getUrl())->assertSuccessful();
+});
+
+test('site settings page loads', function () {
+    $this->get(SiteSettings::getUrl())->assertSuccessful();
 });
 
 test('category resource pages load', function () {

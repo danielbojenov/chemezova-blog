@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Setting;
+use App\Support\Site\SitePageSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,6 +49,16 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Store the header navigation links the settings page would have written.
+ *
+ * @param  list<array{type?: string, category_id?: int|null, label?: string|null}>  $links
+ */
+function storeHeaderLinks(array $links): void
+{
+    Setting::setValue(SitePageSettings::SETTINGS_KEY, ['navigation' => ['header' => $links]]);
 }
 
 /**

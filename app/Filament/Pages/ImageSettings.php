@@ -12,6 +12,7 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use UnitEnum;
 
 /**
  * @property-read Schema $form
@@ -21,6 +22,8 @@ class ImageSettings extends Page
     protected string $view = 'filament.pages.image-settings';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPhoto;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Settings';
 
     protected static ?string $title = 'Image settings';
 

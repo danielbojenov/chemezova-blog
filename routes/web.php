@@ -1,13 +1,12 @@
 <?php
 
 use App\Http\Controllers\AffiliateLinkRedirectController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\HomeController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    ds()->routes();
-    ds('Hello world!');
+Route::get('/', HomeController::class)->name('home');
 
-    return view('welcome');
-});
+Route::get('/categories/{category:slug}', CategoryController::class)->name('categories.show');
 
 Route::get('/go/{slug}', AffiliateLinkRedirectController::class)->name('affiliate-links.redirect');
