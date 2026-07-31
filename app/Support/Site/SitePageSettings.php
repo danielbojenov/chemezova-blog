@@ -35,13 +35,24 @@ final readonly class SitePageSettings
      * `array_replace_recursive`, which merges lists index by index, so a non-empty
      * default would leak its tail into shorter stored lists.
      *
-     * @return array{navigation: array{header: list<array{type: string, category_id: int|null, label: string|null}>}}
+     * The featured block stores the tag's *slug*, not its id: the out-of-the-box default
+     * has to name a tag that does not exist yet, and a slug that resolves to nothing is
+     * exactly the "render no featured block" case the home page already has to handle.
+     *
+     * @return array{navigation: array{header: list<array{type: string, category_id: int|null, label: string|null}>}, home: array{featured: array{tag: string, title: string, button_label: string}}}
      */
     public static function defaults(): array
     {
         return [
             'navigation' => [
                 'header' => [],
+            ],
+            'home' => [
+                'featured' => [
+                    'tag' => 'featured',
+                    'title' => 'Featured',
+                    'button_label' => 'Read the article',
+                ],
             ],
         ];
     }
@@ -74,14 +85,55 @@ final readonly class SitePageSettings
     }
 
     /**
+     * The slug of the tag whose articles fill the home page's featured block.
+     */
+    public function featuredTagSlug(): string
+    {
+        return $this->featuredValue('tag');
+    }
+
+    /**
+     * The label the featured tag is shown under, first in the block's tag line.
+     */
+    public function featuredTagTitle(): string
+    {
+        return $this->featuredValue('title');
+    }
+
+    /**
+     * The call to action on the featured block.
+     */
+    public function featuredButtonLabel(): string
+    {
+        return $this->featuredValue('button_label');
+    }
+
+    /**
+     * Read one featured setting, falling back to its default when the stored value is
+     * blank or is not a string. Blank is treated as absent rather than as a deliberate
+     * empty label: the block has no sensible rendering without a tag or a button.
+     */
+    private function featuredValue(string $key): string
+    {
+        $value = $this->values['home']['featured'][$key] ?? null;
+
+        return filled($value) && is_string($value)
+            ? trim($value)
+            : self::defaults()['home']['featured'][$key];
+    }
+
+    /**
      * Flatten to form state keys.
      *
-     * @return array{header_links: list<array{type: string, category_id: int|null, label: string|null}>}
+     * @return array{header_links: list<array{type: string, category_id: int|null, label: string|null}>, featured_tag: string, featured_title: string, featured_button_label: string}
      */
     public function toFormData(): array
     {
         return [
             'header_links' => $this->headerLinks(),
+            'featured_tag' => $this->featuredTagSlug(),
+            'featured_title' => $this->featuredTagTitle(),
+            'featured_button_label' => $this->featuredButtonLabel(),
         ];
     }
 
@@ -92,11 +144,12 @@ final readonly class SitePageSettings
      * clean ordered list.
      *
      * @param  array<string, mixed>  $data
-     * @return array{navigation: array{header: list<array{type: string, category_id: int|null, label: string|null}>}}
+     * @return array{navigation: array{header: list<array{type: string, category_id: int|null, label: string|null}>}, home: array{featured: array{tag: string, title: string, button_label: string}}}
      */
     public static function fromFormData(array $data): array
     {
         $links = is_array($data['header_links'] ?? null) ? $data['header_links'] : [];
+        $featuredDefaults = self::defaults()['home']['featured'];
 
         return [
             'navigation' => [
@@ -109,6 +162,21 @@ final readonly class SitePageSettings
                     array_filter($links, 'is_array'),
                 )),
             ],
+            'home' => [
+                'featured' => [
+                    'tag' => self::trimmedOr($data['featured_tag'] ?? null, $featuredDefaults['tag']),
+                    'title' => self::trimmedOr($data['featured_title'] ?? null, $featuredDefaults['title']),
+                    'button_label' => self::trimmedOr($data['featured_button_label'] ?? null, $featuredDefaults['button_label']),
+                ],
+            ],
         ];
+    }
+
+    /**
+     * Trim submitted form state, substituting the default when it is blank.
+     */
+    private static function trimmedOr(mixed $value, string $default): string
+    {
+        return filled($value) ? trim((string) $value) : $default;
     }
 }

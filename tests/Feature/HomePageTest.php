@@ -1,16 +1,18 @@
 <?php
 
 use App\Models\Category;
+use App\Models\Tag;
 
 test('the home page loads', function () {
     $this->get(route('home'))->assertSuccessful();
 });
 
 test('the home page renders every section of the design', function () {
+    $article = articleTaggedWith(Tag::factory()->create(['name' => 'Featured', 'slug' => 'featured']));
+
     $this->get(route('home'))
         ->assertSee('chemezova', escape: false)
-        ->assertSee('Featured · Vitamin D', escape: false)
-        ->assertSee('Vitamin D in 2026: How Much You Actually Need')
+        ->assertSee($article->title)
         ->assertSee('Latest articles')
         ->assertSee('Best Vitamin D Supplements, Ranked')
         ->assertSee('Popular now')

@@ -1,13 +1,13 @@
 <?php
 
 use App\Models\Article;
-use App\Support\Images\ArticleImageProcessor;
+use App\Support\Images\ContentImageProcessor;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     Storage::fake('public');
     $this->disk = Storage::disk('public');
-    $this->processor = app(ArticleImageProcessor::class);
+    $this->processor = app(ContentImageProcessor::class);
 });
 
 /**
@@ -24,10 +24,10 @@ function imageBlock(string $path): array
 }
 
 test('a tmp upload is converted into webp variants and the content path is rewritten', function () {
-    $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(1200, 800));
+    $this->disk->put('content/tmp/photo-tmpabc123.jpg', fakeJpegImage(1200, 800));
 
     $article = Article::factory()->create([
-        'content' => [imageBlock('articles/tmp/photo-tmpabc123.jpg')],
+        'content' => [imageBlock('content/tmp/photo-tmpabc123.jpg')],
     ]);
 
     $converted = $this->processor->process($article);
@@ -40,16 +40,16 @@ test('a tmp upload is converted into webp variants and the content path is rewri
         ->and($this->disk->exists("articles/{$article->id}/photo-desktop.webp"))->toBeTrue()
         ->and($this->disk->exists("articles/{$article->id}/photo-mobile.webp"))->toBeTrue()
         ->and($this->disk->exists("articles/{$article->id}/photo-thumbnail.webp"))->toBeTrue()
-        ->and($this->disk->exists('articles/tmp/photo-tmpabc123.jpg'))->toBeFalse();
+        ->and($this->disk->exists('content/tmp/photo-tmpabc123.jpg'))->toBeFalse();
 });
 
 test('rich text blocks are preserved when image blocks are processed', function () {
-    $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
 
     $article = Article::factory()->create([
         'content' => [
             ['type' => 'richText', 'data' => ['content' => '<p>Hello</p>']],
-            imageBlock('articles/tmp/photo-tmpabc123.jpg'),
+            imageBlock('content/tmp/photo-tmpabc123.jpg'),
         ],
     ]);
 
@@ -63,7 +63,7 @@ test('rich text blocks are preserved when image blocks are processed', function 
 });
 
 test('faq blocks are preserved when image blocks are processed', function () {
-    $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
 
     $faqBlock = [
         'type' => 'faq',
@@ -76,7 +76,7 @@ test('faq blocks are preserved when image blocks are processed', function () {
     $article = Article::factory()->create([
         'content' => [
             $faqBlock,
-            imageBlock('articles/tmp/photo-tmpabc123.jpg'),
+            imageBlock('content/tmp/photo-tmpabc123.jpg'),
         ],
     ]);
 
@@ -89,10 +89,10 @@ test('faq blocks are preserved when image blocks are processed', function () {
 });
 
 test('processing is idempotent for already converted blocks', function () {
-    $this->disk->put('articles/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/photo-tmpabc123.jpg', fakeJpegImage(600, 400));
 
     $article = Article::factory()->create([
-        'content' => [imageBlock('articles/tmp/photo-tmpabc123.jpg')],
+        'content' => [imageBlock('content/tmp/photo-tmpabc123.jpg')],
     ]);
 
     $this->processor->process($article);
@@ -107,13 +107,13 @@ test('processing is idempotent for already converted blocks', function () {
 });
 
 test('a name collision within the article folder gets a numeric suffix', function () {
-    $this->disk->put('articles/tmp/photo-tmpaaa111.jpg', fakeJpegImage(600, 400));
-    $this->disk->put('articles/tmp/photo-tmpbbb222.jpg', fakeJpegImage(500, 300));
+    $this->disk->put('content/tmp/photo-tmpaaa111.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/photo-tmpbbb222.jpg', fakeJpegImage(500, 300));
 
     $article = Article::factory()->create([
         'content' => [
-            imageBlock('articles/tmp/photo-tmpaaa111.jpg'),
-            imageBlock('articles/tmp/photo-tmpbbb222.jpg'),
+            imageBlock('content/tmp/photo-tmpaaa111.jpg'),
+            imageBlock('content/tmp/photo-tmpbbb222.jpg'),
         ],
     ]);
 
@@ -141,10 +141,10 @@ test('orphaned image sets are deleted when no block references them', function (
 });
 
 test('referenced image sets survive cleanup while replaced ones are removed', function () {
-    $this->disk->put('articles/tmp/new-tmpccc333.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/new-tmpccc333.jpg', fakeJpegImage(600, 400));
 
     $article = Article::factory()->create([
-        'content' => [imageBlock('articles/tmp/new-tmpccc333.jpg')],
+        'content' => [imageBlock('content/tmp/new-tmpccc333.jpg')],
     ]);
 
     foreach (['old.webp', 'old-desktop.webp', 'old-mobile.webp', 'old-thumbnail.webp'] as $file) {
@@ -159,10 +159,10 @@ test('referenced image sets survive cleanup while replaced ones are removed', fu
 });
 
 test('a corrupt upload is left untouched and does not break processing', function () {
-    $this->disk->put('articles/tmp/bad-tmpddd444.jpg', 'not-an-image');
+    $this->disk->put('content/tmp/bad-tmpddd444.jpg', 'not-an-image');
 
     $article = Article::factory()->create([
-        'content' => [imageBlock('articles/tmp/bad-tmpddd444.jpg')],
+        'content' => [imageBlock('content/tmp/bad-tmpddd444.jpg')],
     ]);
 
     $converted = $this->processor->process($article);
@@ -170,8 +170,8 @@ test('a corrupt upload is left untouched and does not break processing', functio
     $article->refresh();
 
     expect($converted)->toBeFalse()
-        ->and($article->content[0]['data']['image'])->toBe('articles/tmp/bad-tmpddd444.jpg')
-        ->and($this->disk->exists('articles/tmp/bad-tmpddd444.jpg'))->toBeTrue();
+        ->and($article->content[0]['data']['image'])->toBe('content/tmp/bad-tmpddd444.jpg')
+        ->and($this->disk->exists('content/tmp/bad-tmpddd444.jpg'))->toBeTrue();
 });
 
 test('deleting an article removes its image directory', function () {
@@ -186,10 +186,10 @@ test('deleting an article removes its image directory', function () {
 });
 
 test('a featured tmp upload is converted into the featured subdirectory', function () {
-    $this->disk->put('articles/tmp/hero-tmpeee555.jpg', fakeJpegImage(1200, 800));
+    $this->disk->put('content/tmp/hero-tmpeee555.jpg', fakeJpegImage(1200, 800));
 
     $article = Article::factory()->create([
-        'featured_image' => 'articles/tmp/hero-tmpeee555.jpg',
+        'featured_image' => 'content/tmp/hero-tmpeee555.jpg',
         'featured_image_alt' => 'A hero',
     ]);
 
@@ -203,14 +203,14 @@ test('a featured tmp upload is converted into the featured subdirectory', functi
         ->and($this->disk->exists("articles/{$article->id}/featured/hero-desktop.webp"))->toBeTrue()
         ->and($this->disk->exists("articles/{$article->id}/featured/hero-mobile.webp"))->toBeTrue()
         ->and($this->disk->exists("articles/{$article->id}/featured/hero-thumbnail.webp"))->toBeTrue()
-        ->and($this->disk->exists('articles/tmp/hero-tmpeee555.jpg'))->toBeFalse();
+        ->and($this->disk->exists('content/tmp/hero-tmpeee555.jpg'))->toBeFalse();
 });
 
 test('processing is idempotent for an already converted featured image', function () {
-    $this->disk->put('articles/tmp/hero-tmpeee555.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/hero-tmpeee555.jpg', fakeJpegImage(600, 400));
 
     $article = Article::factory()->create([
-        'featured_image' => 'articles/tmp/hero-tmpeee555.jpg',
+        'featured_image' => 'content/tmp/hero-tmpeee555.jpg',
     ]);
 
     $this->processor->process($article);
@@ -223,10 +223,10 @@ test('processing is idempotent for an already converted featured image', functio
 });
 
 test('replacing the featured image removes the previous variant set', function () {
-    $this->disk->put('articles/tmp/new-hero-tmpfff666.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/new-hero-tmpfff666.jpg', fakeJpegImage(600, 400));
 
     $article = Article::factory()->create([
-        'featured_image' => 'articles/tmp/new-hero-tmpfff666.jpg',
+        'featured_image' => 'content/tmp/new-hero-tmpfff666.jpg',
     ]);
 
     foreach (['old-hero.webp', 'old-hero-desktop.webp', 'old-hero-mobile.webp', 'old-hero-thumbnail.webp'] as $file) {
@@ -253,12 +253,12 @@ test('clearing the featured image empties the featured subdirectory', function (
 });
 
 test('content images and the featured image do not clean each other up', function () {
-    $this->disk->put('articles/tmp/photo-tmpaaa111.jpg', fakeJpegImage(600, 400));
-    $this->disk->put('articles/tmp/photo-tmpbbb222.jpg', fakeJpegImage(500, 300));
+    $this->disk->put('content/tmp/photo-tmpaaa111.jpg', fakeJpegImage(600, 400));
+    $this->disk->put('content/tmp/photo-tmpbbb222.jpg', fakeJpegImage(500, 300));
 
     $article = Article::factory()->create([
-        'content' => [imageBlock('articles/tmp/photo-tmpaaa111.jpg')],
-        'featured_image' => 'articles/tmp/photo-tmpbbb222.jpg',
+        'content' => [imageBlock('content/tmp/photo-tmpaaa111.jpg')],
+        'featured_image' => 'content/tmp/photo-tmpbbb222.jpg',
     ]);
 
     $converted = $this->processor->process($article);
@@ -277,10 +277,10 @@ test('content images and the featured image do not clean each other up', functio
 });
 
 test('a corrupt featured upload is left untouched and does not break processing', function () {
-    $this->disk->put('articles/tmp/bad-tmpggg777.jpg', 'not-an-image');
+    $this->disk->put('content/tmp/bad-tmpggg777.jpg', 'not-an-image');
 
     $article = Article::factory()->create([
-        'featured_image' => 'articles/tmp/bad-tmpggg777.jpg',
+        'featured_image' => 'content/tmp/bad-tmpggg777.jpg',
     ]);
 
     $converted = $this->processor->process($article);
@@ -288,8 +288,8 @@ test('a corrupt featured upload is left untouched and does not break processing'
     $article->refresh();
 
     expect($converted)->toBeFalse()
-        ->and($article->featured_image)->toBe('articles/tmp/bad-tmpggg777.jpg')
-        ->and($this->disk->exists('articles/tmp/bad-tmpggg777.jpg'))->toBeTrue();
+        ->and($article->featured_image)->toBe('content/tmp/bad-tmpggg777.jpg')
+        ->and($this->disk->exists('content/tmp/bad-tmpggg777.jpg'))->toBeTrue();
 });
 
 test('deleting an article removes its featured image directory', function () {

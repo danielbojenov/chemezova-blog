@@ -1,7 +1,8 @@
 @php
     use App\Enums\ImageVariant;
     use App\Enums\ProductCardOverride;
-    use App\Filament\Support\ArticleRichContent;
+    use App\Filament\Support\RichContent;
+    use App\Models\Article;
     use App\Models\Product;
     use App\Support\Articles\ArticleHeadings;
     use App\Support\Products\ArticleProductSyncer;
@@ -20,7 +21,10 @@
     // block index, so the links and the headings can never drift apart.
     $headings = ArticleHeadings::extract($blocks);
 
-    $ranks = ArticleProductSyncer::ranksFor($getRecord());
+    // Pages reuse this renderer for their own content, and cannot hold product cards,
+    // so the ranking lookup is skipped for anything that is not an article.
+    $record = $getRecord();
+    $ranks = $record instanceof Article ? ArticleProductSyncer::ranksFor($record) : [];
     $products = $ranks === []
         ? collect()
         : Product::with(['brand', 'affiliateLinks', 'primaryIngredient', 'ingredients'])
@@ -29,7 +33,7 @@
 @endphp
 
 <x-dynamic-component :component="$getEntryWrapperView()" :entry="$entry">
-    <div class="article-content-preview">
+    <div class="content-preview">
         @forelse ($blocks as $block)
             @php
                 $type = $block['type'] ?? null;
@@ -47,7 +51,7 @@
 
                 @case('richText')
                     <div class="acp-block acp-richtext">
-                        {{ ArticleRichContent::renderer($data['content'] ?? '') }}
+                        {{ RichContent::renderer($data['content'] ?? '') }}
                     </div>
                     @break
 
@@ -80,7 +84,7 @@
                             <details class="acp-faq-item">
                                 <summary>{{ $item['question'] ?? '' }}</summary>
                                 <div class="acp-faq-answer">
-                                    {{ ArticleRichContent::renderer($item['answer'] ?? '') }}
+                                    {{ RichContent::renderer($item['answer'] ?? '') }}
                                 </div>
                             </details>
                         @endforeach
@@ -191,7 +195,7 @@
 
                                     @if (filled($description))
                                         <div class="acp-product-description acp-richtext">
-                                            {{ ArticleRichContent::renderer($description) }}
+                                            {{ RichContent::renderer($description) }}
                                         </div>
                                     @endif
 
@@ -214,9 +218,9 @@
                     @break
             @endswitch
         @empty
-            <p class="acp-empty">This article has no content yet.</p>
+            <p class="acp-empty">No content yet.</p>
         @endforelse
     </div>
 </x-dynamic-component>
 
-@include('filament.infolists.article-content-styles')
+@include('filament.infolists.content-styles')

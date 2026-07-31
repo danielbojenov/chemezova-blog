@@ -2,7 +2,7 @@
 
 namespace Database\Factories;
 
-use App\Enums\ArticleStatus;
+use App\Enums\ContentStatus;
 use App\Models\Article;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -24,7 +24,10 @@ class ArticleFactory extends Factory
         return [
             'title' => $title,
             'slug' => Str::slug($title),
-            'excerpt' => fake()->paragraph(),
+            // A sentence, not a paragraph: the excerpt field is capped at
+            // Article::INTRO_LIMIT, so a factory default that could exceed it would make
+            // an article the resource cannot re-save.
+            'excerpt' => fake()->sentence(12),
             'content' => [
                 [
                     'type' => 'richText',
@@ -33,7 +36,7 @@ class ArticleFactory extends Factory
                     ],
                 ],
             ],
-            'status' => ArticleStatus::Draft,
+            'status' => ContentStatus::Draft,
             'published_at' => null,
             'meta_title' => $title,
             'meta_description' => fake()->sentence(12),
@@ -43,7 +46,7 @@ class ArticleFactory extends Factory
     public function draft(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'status' => ArticleStatus::Draft,
+            'status' => ContentStatus::Draft,
             'published_at' => null,
         ]);
     }
@@ -51,7 +54,7 @@ class ArticleFactory extends Factory
     public function published(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'status' => ArticleStatus::Published,
+            'status' => ContentStatus::Published,
             'published_at' => fake()->dateTimeBetween('-1 month'),
         ]);
     }
@@ -59,7 +62,7 @@ class ArticleFactory extends Factory
     public function scheduled(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'status' => ArticleStatus::Scheduled,
+            'status' => ContentStatus::Scheduled,
             'published_at' => fake()->dateTimeBetween('+1 day', '+1 month'),
         ]);
     }

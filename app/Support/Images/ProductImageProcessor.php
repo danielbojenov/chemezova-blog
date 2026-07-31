@@ -15,7 +15,7 @@ use Throwable;
  *
  * The article equivalent walks a list of content blocks; a product carries a
  * single `image` column, so this keeps its own simpler implementation rather
- * than sharing a base class with ArticleImageProcessor.
+ * than sharing a base class with ContentImageProcessor.
  */
 final readonly class ProductImageProcessor
 {

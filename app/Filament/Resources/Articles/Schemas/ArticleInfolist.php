@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\Articles\Schemas;
 
 use App\Enums\ImageVariant;
-use App\Filament\Support\ArticleContentEntry;
 use App\Filament\Support\ArticleTldrEntry;
+use App\Filament\Support\ContentEntry;
 use App\Models\Article;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -65,17 +65,20 @@ class ArticleInfolist
                             ->badge()
                             ->placeholder('—'),
                     ]),
-                Section::make('TLDR')
+                Section::make('Intro')
                     ->columnSpanFull()
                     ->schema([
+                        TextEntry::make('excerpt')
+                            ->columnSpanFull()
+                            ->placeholder('—'),
                         ArticleTldrEntry::make('tldr')
-                            ->hiddenLabel()
+                            ->label('TLDR')
                             ->columnSpanFull(),
                     ]),
                 Section::make('Content')
                     ->columnSpanFull()
                     ->schema([
-                        ArticleContentEntry::make('content')
+                        ContentEntry::make('content')
                             ->hiddenLabel()
                             ->columnSpanFull(),
                     ]),

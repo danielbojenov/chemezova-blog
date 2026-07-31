@@ -5,15 +5,15 @@ namespace App\Filament\Support;
 use Filament\Forms\Components\RichEditor;
 
 /**
- * The rich editors used for all article content HTML, so every editor carries the
- * affiliate link toolbar button.
+ * The rich editors used for all authored content HTML, so every editor shares one
+ * toolbar definition.
  *
- * Two variants differ only in the heading buttons they offer. Section headings are
- * a dedicated `h2` builder block (see {@see HeadingBlock}), so no editor exposes
- * H2: body copy gets H3/H4 for sub-headings, and prose nested inside an already
- * headed block gets no headings at all.
+ * The variants differ in the heading buttons they offer and in whether they carry the
+ * affiliate link button. Section headings are a dedicated `h2` builder block (see
+ * {@see HeadingBlock}), so no editor exposes H2: body copy gets H3/H4 for sub-headings,
+ * and prose nested inside an already headed block gets no headings at all.
  */
-class ArticleRichEditor
+class ContentRichEditor
 {
     /**
      * Body copy: the article's rich text blocks.
@@ -33,16 +33,27 @@ class ArticleRichEditor
     }
 
     /**
+     * Page body copy. Affiliate placements are tracked on the `affiliate_link_article`
+     * pivot, which pages have no side of, so a link dropped into a page would redirect
+     * correctly but never appear in the link's usage reporting. The button is dropped
+     * rather than left to mislead — standing pages have no reason to carry one.
+     */
+    public static function withoutAffiliateLinks(string $name): RichEditor
+    {
+        return self::base($name, ['h3', 'h4'], affiliateLinks: false);
+    }
+
+    /**
      * The toolbar is set explicitly rather than through `enableToolbarButtons()`,
      * which only appends to Filament's defaults and so can neither drop H2 nor
      * place H4 alongside H3.
      *
      * @param  array<int, string>  $headingButtons
      */
-    private static function base(string $name, array $headingButtons): RichEditor
+    private static function base(string $name, array $headingButtons, bool $affiliateLinks = true): RichEditor
     {
         return RichEditor::make($name)
-            ->plugins([AffiliateLinkPlugin::make()])
+            ->plugins($affiliateLinks ? [AffiliateLinkPlugin::make()] : [])
             ->toolbarButtons(array_values(array_filter([
                 ['bold', 'italic', 'underline', 'strike', 'subscript', 'superscript', 'link'],
                 $headingButtons,
@@ -50,7 +61,7 @@ class ArticleRichEditor
                 ['blockquote', 'codeBlock', 'bulletList', 'orderedList'],
                 ['table', 'attachFiles'],
                 ['undo', 'redo'],
-                ['affiliateLink'],
+                $affiliateLinks ? ['affiliateLink'] : [],
             ])));
     }
 }

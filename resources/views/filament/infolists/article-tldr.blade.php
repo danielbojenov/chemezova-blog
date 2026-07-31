@@ -1,14 +1,14 @@
 @php
-    use App\Filament\Support\ArticleRichContent;
+    use App\Filament\Support\RichContent;
 
     $tldr = $getState();
 @endphp
 
 <x-dynamic-component :component="$getEntryWrapperView()" :entry="$entry">
-    <div class="article-content-preview">
+    <div class="content-preview">
         @if (filled($tldr))
             <div class="acp-block acp-richtext">
-                {{ ArticleRichContent::renderer($tldr) }}
+                {{ RichContent::renderer($tldr) }}
             </div>
         @else
             <p class="acp-empty">No TLDR has been written for this article.</p>
@@ -16,4 +16,4 @@
     </div>
 </x-dynamic-component>
 
-@include('filament.infolists.article-content-styles')
+@include('filament.infolists.content-styles')

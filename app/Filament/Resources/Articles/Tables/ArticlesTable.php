@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\Articles\Tables;
 
-use App\Enums\ArticleStatus;
+use App\Enums\ContentStatus;
 use App\Enums\ImageVariant;
 use App\Filament\Resources\Articles\ArticleResource;
 use App\Models\Article;
@@ -61,7 +61,7 @@ class ArticlesTable
             ->defaultSort('created_at', 'desc')
             ->filters([
                 SelectFilter::make('status')
-                    ->options(ArticleStatus::class),
+                    ->options(ContentStatus::class),
                 SelectFilter::make('categories')
                     ->relationship('categories', 'name')
                     ->multiple()

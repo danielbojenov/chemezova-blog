@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Article;
 use App\Models\Setting;
+use App\Models\Tag;
+use App\Support\Site\SiteGeneralSettings;
 use App\Support\Site\SitePageSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -59,6 +62,38 @@ function something()
 function storeHeaderLinks(array $links): void
 {
     Setting::setValue(SitePageSettings::SETTINGS_KEY, ['navigation' => ['header' => $links]]);
+}
+
+/**
+ * Store the home page's featured block settings, leaving the rest at their defaults.
+ *
+ * @param  array{tag?: string, title?: string, button_label?: string}  $featured
+ */
+function storeFeaturedSettings(array $featured): void
+{
+    Setting::setValue(SitePageSettings::SETTINGS_KEY, ['home' => ['featured' => $featured]]);
+}
+
+/**
+ * Store the site-wide author and reading settings the General tab writes.
+ *
+ * @param  array{author?: array{name?: string|null, page_id?: int|null, avatar?: string|null}, reading?: array{characters_per_minute?: int}}  $values
+ */
+function storeGeneralSettings(array $values): void
+{
+    Setting::setValue(SiteGeneralSettings::SETTINGS_KEY, $values);
+}
+
+/**
+ * Create a published article carrying the given tags.
+ */
+function articleTaggedWith(Tag ...$tags): Article
+{
+    $article = Article::factory()->published()->create();
+
+    $article->tags()->attach(array_map(fn (Tag $tag): int => $tag->id, $tags));
+
+    return $article;
 }
 
 /**

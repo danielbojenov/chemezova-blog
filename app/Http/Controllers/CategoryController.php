@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ArticleStatus;
+use App\Enums\ContentStatus;
 use App\Models\Category;
 use Illuminate\Contracts\View\View;
 
@@ -19,7 +19,7 @@ class CategoryController extends Controller
         return view('category', [
             'category' => $category,
             'articles' => $category->articles()
-                ->where('status', ArticleStatus::Published)
+                ->where('status', ContentStatus::Published)
                 ->latest('published_at')
                 ->get(),
         ]);

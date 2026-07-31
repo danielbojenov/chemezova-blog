@@ -1,6 +1,6 @@
 <?php
 
-use App\Enums\ArticleStatus;
+use App\Enums\ContentStatus;
 use App\Models\Article;
 use App\Models\Category;
 
@@ -26,13 +26,13 @@ test('the category page lists only published articles', function () {
 
     $published = Article::factory()->create([
         'title' => 'A published guide',
-        'status' => ArticleStatus::Published,
+        'status' => ContentStatus::Published,
         'published_at' => now()->subDay(),
     ]);
 
     $draft = Article::factory()->create([
         'title' => 'An unfinished draft',
-        'status' => ArticleStatus::Draft,
+        'status' => ContentStatus::Draft,
     ]);
 
     $category->articles()->attach([$published->id, $draft->id]);

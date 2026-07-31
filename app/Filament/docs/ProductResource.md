@@ -225,22 +225,22 @@ Both syncers run from the same page hooks, after the image processor:
 
 ```php
 // CreateArticle::afterCreate() / EditArticle::afterSave()
-app(ArticleImageProcessor::class)->process($record);
+app(ContentImageProcessor::class)->process($record);
 app(ArticleAffiliateLinkSyncer::class)->sync($record);
 app(ArticleProductSyncer::class)->sync($record);
 ```
 
 ### Rendering on the article view page
 
-A `@case('productCard')` arm in `resources/views/filament/infolists/article-content.blade.php` renders the card: rank badge, the image's `-mobile` variant, name, brand, a facts list (rating, pack price, per-dose price, doses per pack, form, composition, primary ingredient), the ingredient pills, the description, and buy buttons. Products are loaded once up front (`Product::with(['brand', 'affiliateLinks', 'primaryIngredient', 'ingredients'])->findMany(...)`) rather than per card, so a ten-card ranking does not N+1.
+A `@case('productCard')` arm in `resources/views/filament/infolists/content.blade.php` renders the card: rank badge, the image's `-mobile` variant, name, brand, a facts list (rating, pack price, per-dose price, doses per pack, form, composition, primary ingredient), the ingredient pills, the description, and buy buttons. Products are loaded once up front (`Product::with(['brand', 'affiliateLinks', 'primaryIngredient', 'ingredients'])->findMany(...)`) rather than per card, so a ten-card ranking does not N+1.
 
-Buy buttons always point at `$link->redirectPath()` (`/go/{slug}`) so the click is logged and `rel="sponsored nofollow"` applies. A card whose product has been deleted is **skipped entirely** rather than half-rendered, matching the null-guarding style used throughout that view. Card styles (`.acp-product-*`) live in the shared `article-content-styles.blade.php` partial.
+Buy buttons always point at `$link->redirectPath()` (`/go/{slug}`) so the click is logged and `rel="sponsored nofollow"` applies. A card whose product has been deleted is **skipped entirely** rather than half-rendered, matching the null-guarding style used throughout that view. Card styles (`.acp-product-*`) live in the shared `content-styles.blade.php` partial.
 
 > Same Blade trap as the rest of that stylesheet: writing a directive name such as `@`once inside a CSS comment makes Blade compile it as a real directive and the view dies with a `ParseError`.
 
 ## Image pipeline
 
-`ProductImageProcessor` is a sibling of `ArticleImageProcessor`, sharing its conventions — `products/tmp` for uploads, a `-tmpXXXXXX` filename marker stripped after conversion, `products/{id}` as the destination, and the same `ImageConverter` + `ImageSizeSettings` (the `images.sizes` setting) for WebP variant generation.
+`ProductImageProcessor` is a sibling of `ContentImageProcessor`, sharing its conventions — `products/tmp` for uploads, a `-tmpXXXXXX` filename marker stripped after conversion, `products/{id}` as the destination, and the same `ImageConverter` + `ImageSizeSettings` (the `images.sizes` setting) for WebP variant generation.
 
 It is **not** a subclass. A product has a single `image` column rather than a walk over content blocks, so the two implementations differ enough that sharing a base class would cost more than the ~40 lines of overlap (unique base name, orphan cleanup) saves.
 

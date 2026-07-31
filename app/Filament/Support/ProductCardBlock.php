@@ -112,7 +112,7 @@ class ProductCardBlock
                     ->formatStateUsing(fn (mixed $state): string => ProductCardOverride::resolve($state)->value)
                     ->required()
                     ->live(),
-                ArticleRichEditor::withoutHeadings('description')
+                ContentRichEditor::withoutHeadings('description')
                     ->label('Description override')
                     ->visible(fn (Get $get): bool => ProductCardOverride::resolve($get('description_mode')) === ProductCardOverride::Custom)
                     ->requiredIf('description_mode', ProductCardOverride::Custom->value),

@@ -8,12 +8,14 @@ use App\Filament\Resources\Articles\ArticleResource;
 use App\Filament\Resources\Brands\BrandResource;
 use App\Filament\Resources\Categories\CategoryResource;
 use App\Filament\Resources\Ingredients\IngredientResource;
+use App\Filament\Resources\Pages\PageResource;
 use App\Filament\Resources\Products\ProductResource;
 use App\Filament\Resources\Tags\TagResource;
 use App\Models\Article;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Ingredient;
+use App\Models\Page;
 use App\Models\Product;
 use App\Models\Tag;
 use App\Models\User;
@@ -46,6 +48,20 @@ test('article edit page loads with image and faq blocks in the content', functio
     ]);
 
     $this->get(ArticleResource::getUrl('edit', ['record' => $article]))->assertSuccessful();
+});
+
+test('the article view page links a published article to its public url', function () {
+    $published = Article::factory()->published()->create(['slug' => 'best-vitamin-d']);
+    $draft = Article::factory()->draft()->create();
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $published]))
+        ->assertSuccessful()
+        ->assertSee($published->url(), escape: false)
+        ->assertSee('Open on site');
+
+    $this->get(ArticleResource::getUrl('view', ['record' => $draft]))
+        ->assertSuccessful()
+        ->assertDontSee('Open on site');
 });
 
 test('article pages load with a featured image set', function () {
@@ -226,4 +242,55 @@ test('ingredient resource pages load', function () {
     $this->get(IngredientResource::getUrl('index'))->assertSuccessful();
     $this->get(IngredientResource::getUrl('create'))->assertSuccessful();
     $this->get(IngredientResource::getUrl('edit', ['record' => $ingredient]))->assertSuccessful();
+});
+
+test('page resource pages load', function () {
+    $page = Page::factory()->withFeaturedImage()->create();
+
+    $this->get(PageResource::getUrl('index'))->assertSuccessful();
+    $this->get(PageResource::getUrl('create'))->assertSuccessful();
+    $this->get(PageResource::getUrl('view', ['record' => $page]))->assertSuccessful();
+    $this->get(PageResource::getUrl('edit', ['record' => $page]))->assertSuccessful();
+});
+
+test('the page view renders heading, rich text and image blocks', function () {
+    $page = Page::factory()->create([
+        'content' => [
+            ['type' => 'h2', 'data' => ['text' => 'DISTINCT_PAGE_HEADING']],
+            ['type' => 'richText', 'data' => ['content' => '<p>DISTINCT_PAGE_PROSE</p>']],
+            ['type' => 'image', 'data' => ['image' => 'pages/1/photo.webp', 'alt' => 'A photo', 'caption' => 'Caption']],
+        ],
+    ]);
+
+    // The content preview is shared with articles, so this also covers it not
+    // reaching for product rankings on a record that can never have any.
+    $this->get(PageResource::getUrl('view', ['record' => $page]))
+        ->assertSuccessful()
+        ->assertSee('DISTINCT_PAGE_HEADING')
+        ->assertSee('DISTINCT_PAGE_PROSE');
+});
+
+test('the page content builder offers no product card block and no affiliate link tool', function () {
+    $page = Page::factory()->create([
+        'content' => [
+            ['type' => 'richText', 'data' => ['content' => '<p>Intro</p>']],
+        ],
+    ]);
+
+    $response = $this->get(PageResource::getUrl('edit', ['record' => $page]));
+
+    $response->assertSuccessful()
+        ->assertDontSee('Product card')
+        ->assertDontSee('Insert affiliate link');
+});
+
+test('both hub and child pages load in the editor', function () {
+    $hub = Page::factory()->create();
+    $child = Page::factory()->childOf($hub)->create();
+
+    // The children list itself is a lazy relation manager, so it is absent from this
+    // initial render by design; PageResourceTest covers when it is offered and what
+    // it shows.
+    $this->get(PageResource::getUrl('edit', ['record' => $hub]))->assertSuccessful();
+    $this->get(PageResource::getUrl('edit', ['record' => $child]))->assertSuccessful();
 });

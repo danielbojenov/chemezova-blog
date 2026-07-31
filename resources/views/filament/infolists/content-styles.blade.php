@@ -1,42 +1,42 @@
 @once
     <style>
-        /* Self-contained styling for the article content preview. The admin panel does
+        /* Self-contained styling for the content preview. The admin panel does
            not ship the Tailwind Typography plugin, so rich-text HTML is styled here
            directly rather than relying on `prose`. Shared by the content and TLDR
            entries; the surrounding once-directive keeps it to one copy per page. */
-        .article-content-preview {
+        .content-preview {
             --acp-border: rgb(228 228 231);          /* zinc-200 */
             --acp-muted: rgb(113 113 122);           /* zinc-500 */
             --acp-accent: rgb(217 119 6);            /* amber-600 (panel primary) */
             font-size: 0.95rem;
             line-height: 1.7;
         }
-        .dark .article-content-preview {
+        .dark .content-preview {
             --acp-border: rgb(255 255 255 / 0.1);
             --acp-muted: rgb(161 161 170);           /* zinc-400 */
             --acp-accent: rgb(251 191 36);           /* amber-400 */
         }
 
         /* Padding between blocks + a slight separator between them. */
-        .article-content-preview .acp-block {
+        .content-preview .acp-block {
             padding: 1.5rem 0;
         }
-        .article-content-preview .acp-block + .acp-block {
+        .content-preview .acp-block + .acp-block {
             border-top: 1px solid var(--acp-border);
         }
-        .article-content-preview .acp-block:first-child {
+        .content-preview .acp-block:first-child {
             padding-top: 0;
         }
 
         /* Section headings are their own block; they lead the block that follows,
            so the usual inter-block gap and separator are dropped between them. */
-        .article-content-preview .acp-heading {
+        .content-preview .acp-heading {
             font-size: 1.35rem;
             font-weight: 700;
             line-height: 1.3;
             padding-bottom: 0.25rem;
         }
-        .article-content-preview .acp-heading + .acp-block {
+        .content-preview .acp-heading + .acp-block {
             border-top: 0;
             padding-top: 0;
         }

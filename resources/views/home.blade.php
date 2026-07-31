@@ -2,13 +2,14 @@
     Home page — designs 1a (mobile, 390px) and 2a (desktop, 1280px) of
     .files/Blog Pages Mobile.dc.html.
 
-    Content is still the design's placeholder copy; the sections are wired to real
-    articles, categories and tags in a follow-up.
+    The featured block reads real content; the remaining sections still carry the
+    design's placeholder copy and are wired to articles, categories and tags in a
+    follow-up.
 --}}
 <x-layouts.site description="Evidence-based guides to vitamins, minerals and supplements.">
     <x-home.topic-scroller />
 
-    <x-home.hero />
+    <x-home.hero :featured="$featured" />
 
     {{--
         Article list + sidebar. One column on mobile, where the sidebar cards simply

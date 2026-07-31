@@ -19,8 +19,8 @@ Follows the same "resource directory" convention as `ArticleResource`: the resou
 | Redirect controller | `app/Http/Controllers/AffiliateLinkRedirectController.php` (route `GET /go/{slug}`, named `affiliate-links.redirect`) |
 | Rich editor plugin | `app/Filament/Support/AffiliateLinkPlugin.php` |
 | Editor modal action | `app/Filament/Support/AffiliateLinkAction.php` |
-| Shared article editor factory | `app/Filament/Support/ArticleRichEditor.php` |
-| Display renderer (rel injection) | `app/Filament/Support/ArticleRichContent.php` |
+| Shared article editor factory | `app/Filament/Support/ContentRichEditor.php` |
+| Display renderer (rel injection) | `app/Filament/Support/RichContent.php` |
 | Placement syncer | `app/Support/AffiliateLinks/ArticleAffiliateLinkSyncer.php` |
 | Migrations | `database/migrations/2026_07_18_054114_create_affiliate_links_table.php`, `..._054115_create_affiliate_link_clicks_table.php`, `..._054117_create_affiliate_link_article_table.php` |
 | Factory | `database/factories/AffiliateLinkFactory.php` |
@@ -53,10 +53,10 @@ The route is public (no auth) and registered in `routes/web.php`.
 
 ## Insertion UX (the rich editor plugin)
 
-Every article rich text surface (the `richText` block, FAQ answers, and the product card description override) is built via `ArticleRichEditor`, whose two variants share one private base:
+Every article rich text surface (the `richText` block, FAQ answers, and the product card description override) is built via `ContentRichEditor`, whose two variants share one private base:
 
 ```php
-// app/Filament/Support/ArticleRichEditor.php
+// app/Filament/Support/ContentRichEditor.php
 return RichEditor::make($name)
     ->plugins([AffiliateLinkPlugin::make()])
     ->toolbarButtons(array_values(array_filter([
@@ -118,7 +118,7 @@ $component->runCommands(
 
 ## Central `rel="sponsored nofollow"` at render time
 
-`rel` is never stored in content. `ArticleRichContent::renderer($html)` wraps `RichContentRenderer` with a `->processNodesUsing()` node processor that stamps `rel="sponsored nofollow"` on every link mark whose href starts with `/go/`:
+`rel` is never stored in content. `RichContent::renderer($html)` wraps `RichContentRenderer` with a `->processNodesUsing()` node processor that stamps `rel="sponsored nofollow"` on every link mark whose href starts with `/go/`:
 
 ```php
 ->processNodesUsing(function (object &$node): void {
@@ -139,7 +139,7 @@ $component->runCommands(
 })
 ```
 
-Gotcha worth knowing: tiptap-php's `descendants()` walker **skips text nodes**, and text nodes are what carry link marks — so the processor iterates the *children* of each visited container node. Regular external links are untouched. The Article view page (`resources/views/filament/infolists/article-content.blade.php`) renders all rich text through this helper; the future public frontend should reuse it so the policy stays in one place.
+Gotcha worth knowing: tiptap-php's `descendants()` walker **skips text nodes**, and text nodes are what carry link marks — so the processor iterates the *children* of each visited container node. Regular external links are untouched. The Article view page (`resources/views/filament/infolists/content.blade.php`) renders all rich text through this helper; the future public frontend should reuse it so the policy stays in one place.
 
 ## Placement tracking
 
@@ -150,7 +150,7 @@ Gotcha worth knowing: tiptap-php's `descendants()` walker **skips text nodes**, 
 - **Additionally collects link ids from product cards**, which reference links by id rather than by href — see below.
 - Resolves everything to ids and `sync()`s the `affiliate_link_article` pivot. Unknown slugs and ids missing from the registry are silently ignored; links removed from content are detached.
 
-Lightweight regex over the stored HTML (rather than a TipTap document walk) matches the precedent set by `ArticleImageProcessor`'s array scanning, and is safe here because content is trusted admin-authored HTML serialized by TipTap with double-quoted attributes.
+Lightweight regex over the stored HTML (rather than a TipTap document walk) matches the precedent set by `ContentImageProcessor`'s array scanning, and is safe here because content is trusted admin-authored HTML serialized by TipTap with double-quoted attributes.
 
 **Product cards are the exception to the href scan.** A `productCard` block stores affiliate link *ids*, not hrefs, so a regex over rich text alone would miss every retailer link rendered on a card — placements would be under-reported and the "used in articles" panel would be wrong. The syncer therefore also reads each card's `links_mode` ([`ProductCardOverride`](ProductResource.md#per-card-overrides)) and contributes the card's override ids when it is `custom`, the product's own `affiliateLinks` when `inherit`, and nothing when `none`.
 

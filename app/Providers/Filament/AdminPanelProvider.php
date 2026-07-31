@@ -10,6 +10,7 @@ use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentTimezone;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -21,6 +22,23 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * The timezone editors work in.
+     *
+     * Timestamps stay in UTC in the database — `config('app.timezone')` is deliberately
+     * left alone — and only the panel converts. Without this, a `DateTimePicker` both
+     * displays and interprets what an editor types as UTC while showing no timezone at
+     * all, so scheduling an article for "in a minute" off a local wall clock silently
+     * files it hours away. One setting covers pickers, table columns and infolist
+     * entries; they all fall back to `FilamentTimezone::get()`.
+     */
+    public const string TIMEZONE = 'Asia/Singapore';
+
+    public function boot(): void
+    {
+        FilamentTimezone::set(self::TIMEZONE);
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel

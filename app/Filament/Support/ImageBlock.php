@@ -2,7 +2,7 @@
 
 namespace App\Filament\Support;
 
-use App\Support\Images\ArticleImageProcessor;
+use App\Support\Images\ContentImageProcessor;
 use App\Support\Images\TmpUploadName;
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\FileUpload;
@@ -13,7 +13,7 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 class ImageBlock
 {
     /**
-     * An article content block with an image upload (converted to WebP variants on save),
+     * A content block with an image upload (converted to WebP variants on save),
      * required alt text, and an optional caption.
      */
     public static function make(): Block
@@ -27,8 +27,8 @@ class ImageBlock
                     ->image()
                     ->imageEditor()
                     ->required()
-                    ->disk(ArticleImageProcessor::DISK)
-                    ->directory(ArticleImageProcessor::TMP_DIRECTORY)
+                    ->disk(ContentImageProcessor::DISK)
+                    ->directory(ContentImageProcessor::TMP_DIRECTORY)
                     ->visibility('public')
                     ->maxSize(10240)
                     ->getUploadedFileNameForStorageUsing(

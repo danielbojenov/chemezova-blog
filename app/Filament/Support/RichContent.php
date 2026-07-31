@@ -6,10 +6,11 @@ use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use stdClass;
 
 /**
- * Renders article rich text HTML for display. All affiliate /go/ links get
- * rel="sponsored nofollow" here, centrally, instead of storing it in content.
+ * Renders authored rich text HTML for display, for articles and pages alike. All
+ * affiliate /go/ links get rel="sponsored nofollow" here, centrally, instead of
+ * storing it in content.
  */
-class ArticleRichContent
+class RichContent
 {
     public static function renderer(?string $html): RichContentRenderer
     {

@@ -28,7 +28,7 @@ class FaqBlock
                             ->required()
                             ->maxLength(500)
                             ->live(onBlur: true),
-                        ArticleRichEditor::withoutHeadings('answer')
+                        ContentRichEditor::withoutHeadings('answer')
                             ->required(),
                     ])
                     ->required()

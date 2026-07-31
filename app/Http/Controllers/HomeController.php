@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Site\FeaturedArticle;
 use Illuminate\Contracts\View\View;
 
 class HomeController extends Controller
@@ -9,11 +10,13 @@ class HomeController extends Controller
     /**
      * Show the home page.
      *
-     * The template still carries the design's placeholder content; the queries for
-     * the featured, latest and popular articles land here once the sections are wired up.
+     * The featured block is wired to real content; the latest and popular sections still
+     * carry the design's placeholder copy and get their queries here as each is built.
      */
     public function __invoke(): View
     {
-        return view('home');
+        return view('home', [
+            'featured' => FeaturedArticle::current(),
+        ]);
     }
 }

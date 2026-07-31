@@ -2,7 +2,8 @@
 
 namespace App\Filament\Resources\Articles;
 
-use App\Enums\ArticleStatus;
+use App\Console\Commands\PublishScheduledArticles;
+use App\Enums\ContentStatus;
 use App\Filament\Resources\Articles\Pages\CreateArticle;
 use App\Filament\Resources\Articles\Pages\EditArticle;
 use App\Filament\Resources\Articles\Pages\ListArticles;
@@ -15,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
 use UnitEnum;
 
 class ArticleResource extends Resource
@@ -38,7 +40,14 @@ class ArticleResource extends Resource
     }
 
     /**
-     * Default `published_at` to now when publishing without an explicit date.
+     * Normalize `published_at` for an article being published.
+     *
+     * Status is what decides visibility, so a Published article must never carry a date
+     * that has not arrived yet: it would read as live in the panel while the public site
+     * showed nothing. Both an empty date and a future one are pulled to now, which is
+     * also what makes moving Scheduled → Published safe without clearing the field by
+     * hand. {@see PublishScheduledArticles} takes the other path,
+     * flipping the status once a scheduled date arrives.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
@@ -46,9 +55,15 @@ class ArticleResource extends Resource
     public static function fillPublishedAt(array $data): array
     {
         $status = $data['status'] ?? null;
-        $status = $status instanceof ArticleStatus ? $status : ArticleStatus::tryFrom((string) $status);
+        $status = $status instanceof ContentStatus ? $status : ContentStatus::tryFrom((string) $status);
 
-        if ($status === ArticleStatus::Published && empty($data['published_at'])) {
+        if ($status !== ContentStatus::Published) {
+            return $data;
+        }
+
+        $publishedAt = $data['published_at'] ?? null;
+
+        if (empty($publishedAt) || Carbon::parse($publishedAt)->isFuture()) {
             $data['published_at'] = now();
         }
 

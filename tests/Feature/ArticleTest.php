@@ -1,6 +1,6 @@
 <?php
 
-use App\Enums\ArticleStatus;
+use App\Enums\ContentStatus;
 use App\Models\Article;
 use App\Models\Category;
 use App\Models\Tag;
@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 test('factory creates a valid draft article', function () {
     $article = Article::factory()->create();
 
-    expect($article->status)->toBe(ArticleStatus::Draft)
+    expect($article->status)->toBe(ContentStatus::Draft)
         ->and($article->published_at)->toBeNull()
         ->and($article->content)->toBeArray()
         ->and($article->content[0]['type'])->toBe('richText')
@@ -41,7 +41,7 @@ test('faq block content round-trips through the array cast', function () {
 test('published state sets a past published_at', function () {
     $article = Article::factory()->published()->create();
 
-    expect($article->status)->toBe(ArticleStatus::Published)
+    expect($article->status)->toBe(ContentStatus::Published)
         ->and($article->published_at)->toBeInstanceOf(Carbon::class)
         ->and($article->published_at->isPast())->toBeTrue();
 });
@@ -49,7 +49,7 @@ test('published state sets a past published_at', function () {
 test('scheduled state sets a future published_at', function () {
     $article = Article::factory()->scheduled()->create();
 
-    expect($article->status)->toBe(ArticleStatus::Scheduled)
+    expect($article->status)->toBe(ContentStatus::Scheduled)
         ->and($article->published_at->isFuture())->toBeTrue();
 });
 
@@ -96,3 +96,51 @@ test('slug must be unique', function () {
 
     Article::factory()->create(['slug' => 'vitamin-d-guide']);
 })->throws(QueryException::class);
+
+/*
+|--------------------------------------------------------------------------
+| Intro
+|--------------------------------------------------------------------------
+*/
+
+test('the excerpt is the intro when the author has written one', function () {
+    $article = Article::factory()->create([
+        'excerpt' => '  What to look for in a D3 supplement.  ',
+        'tldr' => '<p>Ignored while an excerpt exists.</p>',
+    ]);
+
+    expect($article->intro())->toBe('What to look for in a D3 supplement.');
+});
+
+test('the tldr stands in for a missing excerpt, as plain text', function () {
+    $article = Article::factory()->create([
+        'excerpt' => null,
+        'tldr' => '<p>Most adults need <strong>more</strong> than they think.</p>',
+    ]);
+
+    expect($article->intro())->toBe('Most adults need more than they think.');
+});
+
+test('a long tldr is shortened to the intro limit', function () {
+    $article = Article::factory()->create([
+        'excerpt' => null,
+        'tldr' => '<p>'.str_repeat('word ', 200).'</p>',
+    ]);
+
+    $intro = $article->intro();
+
+    expect(mb_strlen($intro))->toBeLessThanOrEqual(Article::INTRO_LIMIT)
+        ->and($intro)->toEndWith(Article::INTRO_ELLIPSIS);
+});
+
+test('an article with neither an excerpt nor a tldr has no intro', function () {
+    $article = Article::factory()->create(['excerpt' => null, 'tldr' => null]);
+
+    expect($article->intro())->toBeNull();
+});
+
+test('a tldr holding only markup counts as no intro', function () {
+    $article = Article::factory()->create(['excerpt' => null, 'tldr' => '<p></p>']);
+
+    expect($article->intro())->toBeNull();
+});
